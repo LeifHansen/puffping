@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/*
+ * PuffPing theme — "stonerish but professional".
+ * The default zinc scale is re-tinted toward smoky, green-cast charcoals so
+ * every existing zinc-* utility picks up the lounge vibe, while emerald and
+ * amber carry the accents. Subtle haze gradients on the page keep it moody
+ * without hurting readability.
+ */
+@theme {
+  --color-zinc-950: #0a0f0b; /* smoked pine black */
+  --color-zinc-900: #131a14;
+  --color-zinc-800: #212b22;
+  --color-zinc-700: #34412f;
+  --color-zinc-600: #4a5943;
+  --color-zinc-500: #71806a;
+  --color-zinc-400: #97a68f;
+  --color-zinc-300: #bfcab6;
+  --color-zinc-200: #d9e0d1;
+  --color-zinc-100: #eef2e8;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-zinc-950);
+  background-image:
+    radial-gradient(60rem 40rem at 85% -10%, rgba(52, 211, 153, 0.07), transparent 60%),
+    radial-gradient(50rem 35rem at -10% 110%, rgba(168, 85, 247, 0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(52, 211, 153, 0.35);
+}

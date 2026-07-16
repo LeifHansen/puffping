@@ -1,0 +1,216 @@
+// PuffPing data model
+// SQLite for local dev — swap provider/url to Postgres in production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  phone        String    @unique // E.164
+  firstName    String?
+  lastName     String?
+  email        String?
+  customFields String? // JSON object of extra CSV columns
+  optedOut     Boolean   @default(false)
+  optedOutAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  memberships  ListMembership[]
+  messages     Message[]
+  conversation Conversation?
+}
+
+model ContactList {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  memberships ListMembership[]
+  campaigns   CampaignList[]
+}
+
+model ListMembership {
+  contactId String
+  listId    String
+  addedAt   DateTime @default(now())
+
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, listId])
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  body      String
+  mediaUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  name        String
+  body        String
+  mediaUrl    String? // MMS attachment URL
+  status      String    @default("draft") // draft | scheduled | sending | sent | failed
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lists    CampaignList[]
+  messages Message[]
+}
+
+model CampaignList {
+  campaignId String
+  listId     String
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  list     ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, listId])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  direction    String // outbound | inbound
+  phone        String // counterparty E.164
+  body         String
+  mediaUrls    String? // JSON array
+  twilioSid    String?  @unique
+  status       String   @default("queued") // queued | sending | sent | delivered | undelivered | failed | received
+  errorCode    String?
+  errorMessage String?
+  numSegments  Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contactId  String?
+  contact    Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model Conversation {
+  id              String   @id @default(cuid())
+  phone           String   @unique // counterparty E.164
+  lastMessageAt   DateTime @default(now())
+  lastMessageBody String   @default("")
+  unreadCount     Int      @default(0)
+
+  contactId String?  @unique
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  messages  Message[]
+}
+
+// A2P 10DLC registration state machine. One row per brand registration.
+model TenDlcRegistration {
+  id String @id @default(cuid())
+
+  // Business info (the minimum Twilio requires for a Standard/Low-Volume brand)
+  legalBusinessName  String
+  businessType       String // Sole Proprietorship | Partnership | LLC | Corporation | Co-operative | Non-profit
+  ein                String // EIN / tax ID
+  einIssuingCountry  String @default("US")
+  website            String
+  addressStreet      String
+  addressCity        String
+  addressState       String
+  addressPostalCode  String
+  addressCountry     String @default("US")
+  vertical           String @default("RETAIL")
+  stockExchange      String?
+  stockTicker        String?
+
+  // Authorized representative (minimum: one contact)
+  contactFirstName String
+  contactLastName  String
+  contactEmail     String
+  contactPhone     String
+  contactTitle     String @default("Owner")
+  contactJobPosition String @default("CEO")
+
+  // Campaign (use case) info
+  useCaseCategory   String @default("MARKETING")
+  useCaseDescription String
+  sampleMessage1    String
+  sampleMessage2    String
+  optInDescription  String // how end users consent
+  optInKeywords     String @default("START")
+
+  // Twilio resource SIDs, populated as the pipeline advances
+  customerProfileSid  String?
+  trustProductSid     String?
+  brandSid            String?
+  campaignSid         String?
+  messagingServiceSid String?
+
+  status       String   @default("draft") // draft | submitting | pending_review | brand_approved | campaign_pending | registered | failed
+  currentStep  String   @default("not_started")
+  failureReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Toll-free verification. One row per toll-free number being verified.
+model TollFreeVerification {
+  id String @id @default(cuid())
+
+  phoneNumberSid String // Twilio IncomingPhoneNumber SID of the toll-free number
+  phoneNumber    String
+
+  businessName       String
+  businessWebsite    String
+  addressStreet      String
+  addressCity        String
+  addressState       String
+  addressPostalCode  String
+  addressCountry     String @default("US")
+  contactFirstName   String
+  contactLastName    String
+  contactEmail       String
+  contactPhone       String
+
+  optInType         String @default("VERBAL") // VERBAL | WEB_FORM | PAPER_FORM | VIA_TEXT | MOBILE_QR_CODE
+  optInImageUrls    String? // JSON array of URLs proving opt-in flow
+  useCaseCategory   String @default("MARKETING")
+  useCaseSummary    String
+  productionMessageSample String
+  messageVolume     String @default("10,000")
+
+  verificationSid String?
+  status          String  @default("draft") // draft | submitted | in_review | approved | rejected
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Numbers purchased through PuffPing
+model PhoneNumber {
+  id           String   @id @default(cuid())
+  phoneNumber  String   @unique // E.164
+  twilioSid    String   @unique
+  friendlyName String?
+  numberType   String // local | tollfree
+  capabilities String? // JSON: { sms, mms, voice }
+  inMessagingService Boolean @default(false)
+  purchasedAt  DateTime @default(now())
+}
