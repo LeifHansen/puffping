@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
+import { currentTenantId } from "@/lib/tenant";
 
 export async function GET(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") ?? "";
   const listId = searchParams.get("listId");
@@ -10,6 +12,7 @@ export async function GET(req: NextRequest) {
   const pageSize = Math.min(200, Number(searchParams.get("pageSize") ?? 50));
 
   const where = {
+    tenantId,
     ...(q
       ? {
           OR: [
@@ -38,6 +41,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   const body = await req.json();
   const phone = normalizePhone(body.phone ?? "");
   if (!phone) {
@@ -46,6 +50,7 @@ export async function POST(req: NextRequest) {
   try {
     const contact = await db.contact.create({
       data: {
+        tenantId,
         phone,
         firstName: body.firstName || null,
         lastName: body.lastName || null,

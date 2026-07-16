@@ -174,7 +174,7 @@ export async function advanceTenDlcRegistration(id: string): Promise<TenDlcRegis
     // ---- Step 5: Messaging service ----
     if (!reg.messagingServiceSid) {
       const service = await client.messaging.v1.services.create({
-        friendlyName: `PuffPing - ${reg.legalBusinessName}`,
+        friendlyName: `Textblast - ${reg.legalBusinessName}`,
         inboundRequestUrl: `${appBaseUrl()}/api/webhooks/twilio/inbound`,
         inboundMethod: "POST",
         statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,
@@ -183,6 +183,12 @@ export async function advanceTenDlcRegistration(id: string): Promise<TenDlcRegis
       reg = await db.tenDlcRegistration.update({
         where: { id },
         data: { messagingServiceSid: service.sid, currentStep: "messaging_service_created" },
+      });
+      // Make this the tenant's active sending service (multi-tenant framework:
+      // falls through tenantMessagingServiceSid before the global env var).
+      await db.tenant.update({
+        where: { id: reg.tenantId },
+        data: { twilioMessagingServiceSid: service.sid },
       });
     }
 

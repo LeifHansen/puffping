@@ -140,7 +140,7 @@ export default function NewCampaignPage() {
                 <Input
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder='e.g. "Write a 4th of July promo for our smoke shop with 15% off code JULY15"'
+                  placeholder='e.g. "Write a 4th of July promo for our store with 15% off code JULY15"'
                 />
               </div>
               <Button variant="secondary" onClick={aiAssist} disabled={aiBusy}>

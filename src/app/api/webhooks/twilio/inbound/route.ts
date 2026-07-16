@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import Twilio from "twilio";
+import { db } from "@/lib/db";
 import { recordInboundMessage } from "@/lib/inbox";
 import { appBaseUrl } from "@/lib/twilio";
+import { getDefaultTenantId } from "@/lib/tenant";
 
 /**
  * Twilio inbound message webhook (set as the Messaging Service inbound URL).
@@ -27,7 +29,14 @@ export async function POST(req: NextRequest) {
     if (u) mediaUrls.push(u);
   }
 
+  // Multi-tenant: route the inbound message to the tenant that owns the
+  // destination (`To`) number. Falls back to the default tenant (single-tenant).
+  const toNumber = params.To ?? "";
+  const owned = toNumber ? await db.phoneNumber.findFirst({ where: { phoneNumber: toNumber } }) : null;
+  const tenantId = owned?.tenantId ?? (await getDefaultTenantId());
+
   await recordInboundMessage({
+    tenantId,
     from: params.From ?? "",
     body: params.Body ?? "",
     twilioSid: params.MessageSid ?? params.SmsSid ?? "",

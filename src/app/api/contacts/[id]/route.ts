@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
+import { currentTenantId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+  const tenantId = await currentTenantId(req);
   const { id } = await params;
   const body = await req.json();
   const data: Record<string, unknown> = {};
@@ -21,12 +23,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     data.optedOut = Boolean(body.optedOut);
     data.optedOutAt = body.optedOut ? new Date() : null;
   }
-  const contact = await db.contact.update({ where: { id }, data });
+  const result = await db.contact.updateMany({ where: { id, tenantId }, data });
+  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const contact = await db.contact.findUnique({ where: { id } });
   return NextResponse.json({ contact });
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const tenantId = await currentTenantId(req);
   const { id } = await params;
-  await db.contact.delete({ where: { id } });
+  await db.contact.deleteMany({ where: { id, tenantId } });
   return NextResponse.json({ ok: true });
 }

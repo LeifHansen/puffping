@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { renderTemplate, segmentCount } from "./render";
-import { appBaseUrl, messagingServiceSid, twilio } from "./twilio";
+import { appBaseUrl, twilio } from "./twilio";
+import { tenantMessagingServiceSid } from "./tenant";
 
 /**
  * Campaign sending at scale (hundreds → 100,000+ contacts).
@@ -22,9 +23,9 @@ const MAX_ATTEMPTS = 3;
 export async function queueCampaign(campaignId: string): Promise<{ queued: number }> {
   const campaign = await db.campaign.findUniqueOrThrow({
     where: { id: campaignId },
-    include: { lists: true },
+    include: { lists: true, tenant: true },
   });
-  if (!messagingServiceSid()) {
+  if (!tenantMessagingServiceSid(campaign.tenant)) {
     throw new Error(
       "No Messaging Service configured. Complete 10DLC or toll-free registration first, or set TWILIO_MESSAGING_SERVICE_SID."
     );
@@ -35,6 +36,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
     data: { status: "sending", startedAt: new Date() },
   });
 
+  const tenantId = campaign.tenantId;
   const listIds = campaign.lists.map((l) => l.listId);
   const mediaUrls = campaign.mediaUrl ? JSON.stringify([campaign.mediaUrl]) : null;
   let queued = 0;
@@ -42,7 +44,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
 
   for (;;) {
     const contacts = await db.contact.findMany({
-      where: { optedOut: false, memberships: { some: { listId: { in: listIds } } } },
+      where: { tenantId, optedOut: false, memberships: { some: { listId: { in: listIds } } } },
       orderBy: { id: "asc" },
       take: ENQUEUE_BATCH,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -55,6 +57,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
         const body = renderTemplate(campaign.body, contact);
         if (!body.trim() && !mediaUrls) return null;
         return {
+          tenantId,
           direction: "outbound",
           phone: contact.phone,
           body,
@@ -89,19 +92,17 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
 // Background worker (singleton per Node process)
 // ---------------------------------------------------------------------------
 
-const g = globalThis as unknown as { __puffpingWorker?: boolean };
+const g = globalThis as unknown as { __textblastWorker?: boolean };
 
 export function ensureSendWorker() {
-  if (g.__puffpingWorker) return;
-  g.__puffpingWorker = true;
+  if (g.__textblastWorker) return;
+  g.__textblastWorker = true;
   void workerLoop().finally(() => {
-    g.__puffpingWorker = false;
+    g.__textblastWorker = false;
   });
 }
 
 async function workerLoop() {
-  const serviceSid = messagingServiceSid();
-  if (!serviceSid) return;
   const client = twilio();
   const statusCallback = `${appBaseUrl()}/api/webhooks/twilio/status`;
 
@@ -110,6 +111,7 @@ async function workerLoop() {
       where: { status: "pending", direction: "outbound" },
       orderBy: { createdAt: "asc" },
       take: CLAIM_BATCH,
+      include: { tenant: true },
     });
     if (!pending.length) break;
 
@@ -124,13 +126,21 @@ async function workerLoop() {
       for (;;) {
         const msg = queue.shift();
         if (!msg) return;
+        const serviceSid = tenantMessagingServiceSid(msg.tenant);
+        if (!serviceSid) {
+          await db.message.update({
+            where: { id: msg.id },
+            data: { status: "failed", errorMessage: "No messaging service configured for tenant" },
+          });
+          continue;
+        }
         let attempt = 0;
         for (;;) {
           attempt++;
           try {
             const res = await client.messages.create({
               to: msg.phone,
-              messagingServiceSid: serviceSid!,
+              messagingServiceSid: serviceSid,
               body: msg.body,
               mediaUrl: msg.mediaUrls ? (JSON.parse(msg.mediaUrls) as string[]) : undefined,
               statusCallback,
@@ -194,13 +204,15 @@ export async function resumePendingSends() {
 
 /** Send a single ad-hoc message (inbox replies, test sends). */
 export async function sendDirectMessage(opts: {
+  tenantId: string;
   to: string;
   body: string;
   mediaUrls?: string[];
   conversationId?: string;
   contactId?: string;
 }): Promise<string> {
-  const serviceSid = messagingServiceSid();
+  const tenant = await db.tenant.findUniqueOrThrow({ where: { id: opts.tenantId } });
+  const serviceSid = tenantMessagingServiceSid(tenant);
   if (!serviceSid) throw new Error("No Messaging Service configured.");
   const client = twilio();
   const msg = await client.messages.create({
@@ -212,6 +224,7 @@ export async function sendDirectMessage(opts: {
   });
   const record = await db.message.create({
     data: {
+      tenantId: opts.tenantId,
       direction: "outbound",
       phone: opts.to,
       body: opts.body,

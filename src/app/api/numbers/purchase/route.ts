@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isTollFree } from "@/lib/phone";
-import { isTwilioConfigured, messagingServiceSid, twilio } from "@/lib/twilio";
+import { isTwilioConfigured, twilio } from "@/lib/twilio";
+import { resolveTenant, tenantMessagingServiceSid } from "@/lib/tenant";
 
 /**
  * Purchase one or multiple numbers in a single request:
@@ -18,8 +19,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "phoneNumbers array is required" }, { status: 400 });
   }
 
+  const tenant = await resolveTenant(req);
   const client = twilio();
-  const serviceSid = messagingServiceSid();
+  const serviceSid = tenantMessagingServiceSid(tenant);
   const purchased: string[] = [];
   const failed: { phoneNumber: string; error: string }[] = [];
 
@@ -37,6 +39,7 @@ export async function POST(req: NextRequest) {
       }
       await db.phoneNumber.create({
         data: {
+          tenantId: tenant.id,
           phoneNumber: incoming.phoneNumber,
           twilioSid: incoming.sid,
           friendlyName: incoming.friendlyName,

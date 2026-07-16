@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { currentTenantId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
+  const tenantId = await currentTenantId(req);
   const { id } = await params;
-  const campaign = await db.campaign.findUnique({
-    where: { id },
+  const campaign = await db.campaign.findFirst({
+    where: { id, tenantId },
     include: { lists: { include: { list: true } } },
   });
   if (!campaign) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -23,6 +25,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const replyRows = await db.$queryRaw<{ n: bigint | number }[]>`
     SELECT COUNT(*) AS n FROM "Message" m
     WHERE m.direction = 'inbound'
+      AND m.tenantId = ${tenantId}
       AND m.createdAt >= ${since}
       AND m.phone IN (SELECT DISTINCT phone FROM "Message" WHERE campaignId = ${id})
   `;
@@ -35,8 +38,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
   });
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const tenantId = await currentTenantId(req);
   const { id } = await params;
-  await db.campaign.delete({ where: { id } });
+  await db.campaign.deleteMany({ where: { id, tenantId } });
   return NextResponse.json({ ok: true });
 }

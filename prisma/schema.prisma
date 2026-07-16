@@ -1,5 +1,15 @@
-// PuffPing data model
+// Textblast.io data model
 // SQLite for local dev — swap provider/url to Postgres in production.
+//
+// MULTI-TENANCY FRAMEWORK
+// -----------------------
+// Every tenant-owned row carries a `tenantId`. A `Tenant` is a workspace /
+// organization. Today the app runs in single-tenant mode: one default tenant,
+// resolved by `getCurrentTenant()` in src/lib/tenant.ts. To go multi-tenant
+// later, change ONLY that resolver (subdomain / session / JWT) — every query is
+// already scoped by tenantId, and uniqueness is per-tenant, so no schema or
+// query changes are needed. Twilio credentials can live per-tenant (see Tenant)
+// and fall back to global env vars until then.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,9 +20,71 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique // subdomain / URL key, e.g. "acme" -> acme.textblast.io
+  name      String
+  plan      String   @default("free") // free | starter | growth | scale
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Per-tenant Twilio config. Null => fall back to global env vars (single-tenant).
+  // In full multi-tenant mode each tenant gets its own Twilio subaccount +
+  // messaging service + 10DLC brand.
+  twilioSubaccountSid       String?
+  twilioAuthToken           String? // encrypt at rest before real multi-tenant launch
+  twilioMessagingServiceSid String?
+
+  memberships   Membership[]
+  contacts      Contact[]
+  lists         ContactList[]
+  templates     Template[]
+  campaigns     Campaign[]
+  messages      Message[]
+  conversations Conversation[]
+  numbers       PhoneNumber[]
+  tenDlc        TenDlcRegistration[]
+  tollFree      TollFreeVerification[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+}
+
+// A user's membership in a tenant. Many-to-many so a user can belong to
+// multiple workspaces later; `role` gates permissions.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      String   @default("owner") // owner | admin | member
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Messaging domain (all tenant-scoped)
+// ---------------------------------------------------------------------------
+
 model Contact {
   id           String    @id @default(cuid())
-  phone        String    @unique // E.164
+  tenantId     String
+  phone        String // E.164
   firstName    String?
   lastName     String?
   email        String?
@@ -22,18 +94,27 @@ model Contact {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships  ListMembership[]
   messages     Message[]
   conversation Conversation?
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
 }
 
 model ContactList {
   id        String   @id @default(cuid())
-  name      String   @unique
+  tenantId  String
+  name      String
   createdAt DateTime @default(now())
 
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships ListMembership[]
   campaigns   CampaignList[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model ListMembership {
@@ -49,15 +130,22 @@ model ListMembership {
 
 model Template {
   id        String   @id @default(cuid())
-  name      String   @unique
+  tenantId  String
+  name      String
   body      String
   mediaUrl  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Campaign {
   id          String    @id @default(cuid())
+  tenantId    String
   name        String
   body        String
   mediaUrl    String? // MMS attachment URL
@@ -68,8 +156,11 @@ model Campaign {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lists    CampaignList[]
   messages Message[]
+
+  @@index([tenantId])
 }
 
 model CampaignList {
@@ -84,6 +175,7 @@ model CampaignList {
 
 model Message {
   id           String   @id @default(cuid())
+  tenantId     String
   direction    String // outbound | inbound
   phone        String // counterparty E.164
   body         String
@@ -96,6 +188,7 @@ model Message {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   campaignId String?
   campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   contactId  String?
@@ -104,26 +197,33 @@ model Message {
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId, status])
   @@index([campaignId, status])
-  @@index([phone])
+  @@index([tenantId, phone])
   @@index([createdAt])
 }
 
 model Conversation {
   id              String   @id @default(cuid())
-  phone           String   @unique // counterparty E.164
+  tenantId        String
+  phone           String // counterparty E.164
   lastMessageAt   DateTime @default(now())
   lastMessageBody String   @default("")
   unreadCount     Int      @default(0)
 
-  contactId String?  @unique
-  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId String?   @unique
+  contact   Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages  Message[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
 }
 
 // A2P 10DLC registration state machine. One row per brand registration.
 model TenDlcRegistration {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
+  tenantId String
 
   // Business info (the minimum Twilio requires for a Standard/Low-Volume brand)
   legalBusinessName  String
@@ -168,11 +268,16 @@ model TenDlcRegistration {
   failureReason String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 // Toll-free verification. One row per toll-free number being verified.
 model TollFreeVerification {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
+  tenantId String
 
   phoneNumberSid String // Twilio IncomingPhoneNumber SID of the toll-free number
   phoneNumber    String
@@ -201,16 +306,26 @@ model TollFreeVerification {
   rejectionReason String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// Numbers purchased through PuffPing
+// Numbers purchased through Textblast.io
 model PhoneNumber {
   id           String   @id @default(cuid())
-  phoneNumber  String   @unique // E.164
+  tenantId     String
+  phoneNumber  String // E.164
   twilioSid    String   @unique
   friendlyName String?
   numberType   String // local | tollfree
   capabilities String? // JSON: { sms, mms, voice }
   inMessagingService Boolean @default(false)
   purchasedAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId])
 }

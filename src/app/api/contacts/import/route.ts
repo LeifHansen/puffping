@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
 import { snakeCase } from "@/lib/render";
+import { currentTenantId } from "@/lib/tenant";
 
 export const maxDuration = 300;
 
@@ -29,6 +30,7 @@ type ParsedRow = {
  * query per chunk, new ones inserted with createMany.
  */
 export async function POST(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
@@ -60,8 +62,8 @@ export async function POST(req: NextRequest) {
   let targetListId = listId;
   if (!targetListId && listName) {
     const list = await db.contactList.upsert({
-      where: { name: listName },
-      create: { name: listName },
+      where: { tenantId_name: { tenantId, name: listName } },
+      create: { tenantId, name: listName },
       update: {},
     });
     targetListId = list.id;
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
     const phones = chunk.map((r) => r.phone);
 
     const existing = await db.contact.findMany({
-      where: { phone: { in: phones } },
+      where: { tenantId, phone: { in: phones } },
       select: { id: true, phone: true, firstName: true, lastName: true, email: true, customFields: true },
     });
     const existingByPhone = new Map(existing.map((c) => [c.phone, c]));
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest) {
     // Bulk-insert brand-new contacts
     const fresh = chunk.filter((r) => !existingByPhone.has(r.phone));
     if (fresh.length) {
-      await db.contact.createMany({ data: fresh });
+      await db.contact.createMany({ data: fresh.map((r) => ({ ...r, tenantId })) });
       imported += fresh.length;
     }
 
@@ -140,7 +142,7 @@ export async function POST(req: NextRequest) {
     // Bulk list memberships for the whole chunk
     if (targetListId) {
       const chunkContacts = await db.contact.findMany({
-        where: { phone: { in: phones } },
+        where: { tenantId, phone: { in: phones } },
         select: { id: true },
       });
       const ids = chunkContacts.map((c) => c.id);

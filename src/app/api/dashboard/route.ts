@@ -1,24 +1,26 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { subDays, startOfDay, format } from "date-fns";
 import { db } from "@/lib/db";
+import { currentTenantId } from "@/lib/tenant";
 
 const DELIVERED = ["delivered"];
 const FAILED = ["failed", "undelivered"];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   const since = startOfDay(subDays(new Date(), 29));
 
   const [contactCount, optedOutCount, campaignCount, statusGroups, recentMessages, unread] =
     await Promise.all([
-      db.contact.count(),
-      db.contact.count({ where: { optedOut: true } }),
-      db.campaign.count(),
-      db.message.groupBy({ by: ["status", "direction"], _count: true }),
+      db.contact.count({ where: { tenantId } }),
+      db.contact.count({ where: { tenantId, optedOut: true } }),
+      db.campaign.count({ where: { tenantId } }),
+      db.message.groupBy({ by: ["status", "direction"], where: { tenantId }, _count: true }),
       db.message.findMany({
-        where: { createdAt: { gte: since } },
+        where: { tenantId, createdAt: { gte: since } },
         select: { createdAt: true, direction: true, status: true },
       }),
-      db.conversation.aggregate({ _sum: { unreadCount: true } }),
+      db.conversation.aggregate({ where: { tenantId }, _sum: { unreadCount: true } }),
     ]);
 
   let sent = 0;

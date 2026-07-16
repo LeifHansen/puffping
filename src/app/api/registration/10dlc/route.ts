@@ -3,11 +3,16 @@ import { db } from "@/lib/db";
 import { advanceTenDlcRegistration } from "@/lib/tendlc";
 import { normalizePhone } from "@/lib/phone";
 import { isTwilioConfigured } from "@/lib/twilio";
+import { currentTenantId } from "@/lib/tenant";
 
 export const maxDuration = 300;
 
-export async function GET() {
-  const registration = await db.tenDlcRegistration.findFirst({ orderBy: { createdAt: "desc" } });
+export async function GET(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
+  const registration = await db.tenDlcRegistration.findFirst({
+    where: { tenantId },
+    orderBy: { createdAt: "desc" },
+  });
   return NextResponse.json({ registration });
 }
 
@@ -32,6 +37,7 @@ const REQUIRED = [
 
 /** Create (or update the draft of) the 10DLC registration and run the pipeline. */
 export async function POST(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   if (!isTwilioConfigured()) {
     return NextResponse.json({ error: "Twilio is not configured" }, { status: 400 });
   }
@@ -67,19 +73,26 @@ export async function POST(req: NextRequest) {
   };
 
   // Reuse a failed/draft registration row rather than duplicating
-  const existing = await db.tenDlcRegistration.findFirst({ orderBy: { createdAt: "desc" } });
+  const existing = await db.tenDlcRegistration.findFirst({
+    where: { tenantId },
+    orderBy: { createdAt: "desc" },
+  });
   const registration =
     existing && ["draft", "failed"].includes(existing.status)
       ? await db.tenDlcRegistration.update({ where: { id: existing.id }, data: { ...data, status: "draft", failureReason: null } })
-      : existing ?? (await db.tenDlcRegistration.create({ data }));
+      : existing ?? (await db.tenDlcRegistration.create({ data: { ...data, tenantId } }));
 
   const result = await advanceTenDlcRegistration(registration.id);
   return NextResponse.json({ registration: result }, { status: result.status === "failed" ? 500 : 200 });
 }
 
 /** Re-poll / advance the pipeline (e.g. after Twilio review completes). */
-export async function PATCH() {
-  const existing = await db.tenDlcRegistration.findFirst({ orderBy: { createdAt: "desc" } });
+export async function PATCH(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
+  const existing = await db.tenDlcRegistration.findFirst({
+    where: { tenantId },
+    orderBy: { createdAt: "desc" },
+  });
   if (!existing) return NextResponse.json({ error: "No registration found" }, { status: 404 });
   const result = await advanceTenDlcRegistration(existing.id);
   return NextResponse.json({ registration: result });

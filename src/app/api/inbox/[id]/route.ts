@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { currentTenantId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
+  const tenantId = await currentTenantId(req);
   const { id } = await params;
-  const conversation = await db.conversation.findUnique({
-    where: { id },
+  const conversation = await db.conversation.findFirst({
+    where: { id, tenantId },
     include: { contact: true },
   });
   if (!conversation) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const messages = await db.message.findMany({
-    where: { OR: [{ conversationId: id }, { phone: conversation.phone }] },
+    where: { tenantId, OR: [{ conversationId: id }, { phone: conversation.phone }] },
     orderBy: { createdAt: "asc" },
     take: 500,
   });

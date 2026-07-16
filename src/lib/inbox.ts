@@ -10,15 +10,18 @@ const OPT_IN_KEYWORDS = ["start", "unstop", "yes", "subscribe"];
  * campaign audiences exclude opted-out contacts.
  */
 export async function recordInboundMessage(opts: {
+  tenantId: string;
   from: string;
   body: string;
   twilioSid: string;
   mediaUrls: string[];
   numSegments: number;
 }) {
-  const { from, body, twilioSid, mediaUrls, numSegments } = opts;
+  const { tenantId, from, body, twilioSid, mediaUrls, numSegments } = opts;
 
-  const contact = await db.contact.findUnique({ where: { phone: from } });
+  const contact = await db.contact.findUnique({
+    where: { tenantId_phone: { tenantId, phone: from } },
+  });
 
   const keyword = body.trim().toLowerCase();
   if (contact && OPT_OUT_KEYWORDS.includes(keyword)) {
@@ -34,8 +37,9 @@ export async function recordInboundMessage(opts: {
   }
 
   const conversation = await db.conversation.upsert({
-    where: { phone: from },
+    where: { tenantId_phone: { tenantId, phone: from } },
     create: {
+      tenantId,
       phone: from,
       contactId: contact?.id,
       lastMessageAt: new Date(),
@@ -52,6 +56,7 @@ export async function recordInboundMessage(opts: {
 
   await db.message.create({
     data: {
+      tenantId,
       direction: "inbound",
       phone: from,
       body,

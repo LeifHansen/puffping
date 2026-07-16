@@ -3,9 +3,14 @@ import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
 import { refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
 import { isTwilioConfigured } from "@/lib/twilio";
+import { currentTenantId } from "@/lib/tenant";
 
-export async function GET() {
-  const verifications = await db.tollFreeVerification.findMany({ orderBy: { createdAt: "desc" } });
+export async function GET(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
+  const verifications = await db.tollFreeVerification.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: "desc" },
+  });
   return NextResponse.json({ verifications });
 }
 
@@ -27,6 +32,7 @@ const REQUIRED = [
 ] as const;
 
 export async function POST(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   if (!isTwilioConfigured()) {
     return NextResponse.json({ error: "Twilio is not configured" }, { status: 400 });
   }
@@ -40,6 +46,7 @@ export async function POST(req: NextRequest) {
 
   const verification = await db.tollFreeVerification.create({
     data: {
+      tenantId,
       phoneNumberSid: body.phoneNumberSid,
       phoneNumber: body.phoneNumber,
       businessName: body.businessName.trim(),
@@ -66,11 +73,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const tenantId = await currentTenantId(req);
   const body = await req.json().catch(() => ({}));
   const id = body.id as string | undefined;
   const target = id
-    ? await db.tollFreeVerification.findUnique({ where: { id } })
-    : await db.tollFreeVerification.findFirst({ orderBy: { createdAt: "desc" } });
+    ? await db.tollFreeVerification.findFirst({ where: { id, tenantId } })
+    : await db.tollFreeVerification.findFirst({ where: { tenantId }, orderBy: { createdAt: "desc" } });
   if (!target) return NextResponse.json({ error: "No verification found" }, { status: 404 });
   const result = await refreshTollFreeStatus(target.id);
   return NextResponse.json({ verification: result });

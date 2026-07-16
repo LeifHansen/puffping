@@ -97,7 +97,7 @@ export default function TemplatesPage() {
               rows={4}
               value={editing.body ?? ""}
               onChange={(e) => setEditing({ ...editing, body: e.target.value })}
-              placeholder="Hi {{first_name|there}}! Everything is 20% off this weekend at PuffPing Supply. Reply STOP to opt out."
+              placeholder="Hi {{first_name|there}}! Everything is 20% off this weekend at Acme Supply Co. Reply STOP to opt out."
             />
             <p className="mt-1 text-xs text-zinc-500">
               {(editing.body ?? "").length} characters · dynamic fields: {"{{first_name}}"}, {"{{last_name}}"},{" "}

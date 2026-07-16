@@ -213,7 +213,7 @@ export default function CompliancePage() {
             <div>
               <h3 className="mb-2 text-sm font-semibold text-emerald-300">1 · Business</h3>
               <div className="grid gap-3 md:grid-cols-3">
-                {field("Legal business name", "legalBusinessName", "PuffPing Supply LLC")}
+                {field("Legal business name", "legalBusinessName", "Acme Supply Co LLC")}
                 <div>
                   <Label>Business type</Label>
                   <Select value={form.businessType} onChange={(e) => set("businessType", e.target.value)}>
