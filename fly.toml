@@ -1,8 +1,5 @@
-# Fly.io config for Textblast.io
-# NOTE: `app` is the existing provisioned Fly app slug (kept as-is so the
-# already-configured secrets and GitHub deploy keep working). The product brand
-# is Textblast.io; the Fly app identifier is just infrastructure.
-app = "puffping"
+# Fly.io config for Textblast.io — deploys to the `textblast` Fly app.
+app = "textblast"
 primary_region = "iad"
 
 [build]
@@ -13,7 +10,7 @@ primary_region = "iad"
   # deploys, create a volume (`fly volumes create textblast_data -s 1`),
   # uncomment [mounts] below, and change this to file:/data/textblast.db
   DATABASE_URL = "file:/app/prisma/prod.db"
-  APP_BASE_URL = "https://puffping.fly.dev"
+  APP_BASE_URL = "https://textblast.fly.dev"
 
 # [mounts]
 #   source = "textblast_data"

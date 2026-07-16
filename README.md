@@ -53,7 +53,7 @@ npm run dev
 
 ### Deploy (Fly.io)
 
-`Dockerfile` + `fly.toml` are included. The Fly **app slug** stays `puffping` (the already-provisioned app that holds the secrets and GitHub deploy); the product brand is Textblast.io. SQLite auto-migrates on boot; uncomment the `[mounts]` volume block for data that survives deploys. Keep one machine always running so the send worker never pauses mid-campaign.
+`Dockerfile` + `fly.toml` are included and deploy to the **`textblast`** Fly app (`https://fly.io/apps/textblast`). Set the Twilio + Anthropic secrets on that app (`fly secrets set …`) and point the GitHub deploy connection at it. SQLite auto-migrates on boot; uncomment the `[mounts]` volume block for data that survives deploys. Keep one machine always running so the send worker never pauses mid-campaign.
 
 ## Scaling beyond SQLite
 
