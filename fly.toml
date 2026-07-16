@@ -1,0 +1,31 @@
+# Fly.io config for PuffPing
+app = "puffping"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # SQLite lives inside the machine by default. For durable data across
+  # deploys, create a volume (`fly volumes create puffping_data -s 1`),
+  # uncomment [mounts] below, and change this to file:/data/puffping.db
+  DATABASE_URL = "file:/app/prisma/prod.db"
+  APP_BASE_URL = "https://puffping.fly.dev"
+
+# [mounts]
+#   source = "puffping_data"
+#   destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # The campaign send queue drains in a background worker inside the web
+  # process — keep at least one machine running so sends never pause.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
