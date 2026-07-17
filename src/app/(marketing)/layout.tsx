@@ -43,6 +43,8 @@ function Footer() {
           <Link href="/#features" className="hover:text-white">Features</Link>
           <Link href="/pricing" className="hover:text-white">Pricing</Link>
           <Link href="/#compliance" className="hover:text-white">10DLC &amp; Toll-free</Link>
+          <Link href="/privacy" className="hover:text-white">Privacy</Link>
+          <Link href="/terms" className="hover:text-white">Terms</Link>
           <Link href="/dashboard" className="hover:text-white">Open app</Link>
         </div>
       </div>

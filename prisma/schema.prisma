@@ -49,6 +49,7 @@ model Tenant {
   numbers       PhoneNumber[]
   tenDlc        TenDlcRegistration[]
   tollFree      TollFreeVerification[]
+  media         MediaAsset[]
 }
 
 model User {
@@ -321,6 +322,27 @@ model TollFreeVerification {
   rejectionReason String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// Media library — images & videos used for MMS campaigns.
+model MediaAsset {
+  id                String   @id @default(cuid())
+  tenantId          String
+  kind              String // image | video
+  filename          String
+  mimeType          String
+  sizeBytes         Int
+  width             Int?
+  height            Int?
+  storagePath       String // path on disk relative to the media dir
+  optimizedForMobile Boolean @default(false)
+  sourceAssetId     String? // set when this is an optimized derivative of another asset
+  altText           String? // AI-generated alt/caption from the optimize step
+  createdAt         DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
