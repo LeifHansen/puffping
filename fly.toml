@@ -10,7 +10,7 @@ primary_region = "iad"
   # deploys, create a volume (`fly volumes create textblast_data -s 1`),
   # uncomment [mounts] below, and change this to file:/data/textblast.db
   DATABASE_URL = "file:/app/prisma/prod.db"
-  APP_BASE_URL = "https://textblast.fly.dev"
+  APP_BASE_URL = "https://puffping.com"
 
 # [mounts]
 #   source = "textblast_data"
