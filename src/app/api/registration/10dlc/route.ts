@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { advanceTenDlcRegistration } from "@/lib/tendlc";
+import { generateCampaignContent, ensureCompliantMessage } from "@/lib/tendlc-ai";
 import { normalizePhone } from "@/lib/phone";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { currentTenantId } from "@/lib/tenant";
@@ -16,9 +17,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ registration });
 }
 
+// The ABSOLUTE MINIMUM the user must provide — legal/factual fields AI can't
+// invent. Everything else (use case, sample messages, opt-in, vertical,
+// business type) is generated + compliance-checked by AI server-side.
 const REQUIRED = [
   "legalBusinessName",
-  "businessType",
   "ein",
   "website",
   "addressStreet",
@@ -29,13 +32,8 @@ const REQUIRED = [
   "contactLastName",
   "contactEmail",
   "contactPhone",
-  "useCaseDescription",
-  "sampleMessage1",
-  "sampleMessage2",
-  "optInDescription",
 ] as const;
 
-/** Create (or update the draft of) the 10DLC registration and run the pipeline. */
 export async function POST(req: NextRequest) {
   const tenantId = await currentTenantId(req);
   if (!isTwilioConfigured()) {
@@ -49,16 +47,32 @@ export async function POST(req: NextRequest) {
   const contactPhone = normalizePhone(body.contactPhone);
   if (!contactPhone) return NextResponse.json({ error: "Invalid contact phone" }, { status: 400 });
 
+  const legalBusinessName = body.legalBusinessName.trim();
+
+  // AI prefill: fill any campaign content the user didn't provide, and ensure
+  // sample messages are compliant either way.
+  const hasCampaignContent =
+    body.useCaseDescription?.trim() && body.sampleMessage1?.trim() && body.sampleMessage2?.trim() && body.optInDescription?.trim();
+  let generated = null as Awaited<ReturnType<typeof generateCampaignContent>> | null;
+  if (!hasCampaignContent) {
+    generated = await generateCampaignContent({
+      businessName: legalBusinessName,
+      website: body.website,
+      description: body.description,
+    });
+  }
+  const gc = generated?.content;
+
   const data = {
-    legalBusinessName: body.legalBusinessName.trim(),
-    businessType: body.businessType,
+    legalBusinessName,
+    businessType: body.businessType || gc?.businessType || "Limited Liability Corporation",
     ein: body.ein.replace(/\D/g, ""),
     website: body.website.trim(),
     addressStreet: body.addressStreet.trim(),
     addressCity: body.addressCity.trim(),
     addressState: body.addressState.trim(),
     addressPostalCode: body.addressPostalCode.trim(),
-    vertical: body.vertical || "RETAIL",
+    vertical: body.vertical || gc?.vertical || "RETAIL",
     contactFirstName: body.contactFirstName.trim(),
     contactLastName: body.contactLastName.trim(),
     contactEmail: body.contactEmail.trim(),
@@ -66,13 +80,14 @@ export async function POST(req: NextRequest) {
     contactTitle: body.contactTitle || "Owner",
     contactJobPosition: body.contactJobPosition || "CEO",
     useCaseCategory: body.useCaseCategory || "MARKETING",
-    useCaseDescription: body.useCaseDescription.trim(),
-    sampleMessage1: body.sampleMessage1.trim(),
-    sampleMessage2: body.sampleMessage2.trim(),
-    optInDescription: body.optInDescription.trim(),
+    useCaseDescription: (body.useCaseDescription?.trim() || gc?.useCaseDescription || "").slice(0, 4000),
+    sampleMessage1: ensureCompliantMessage(body.sampleMessage1?.trim() || gc?.sampleMessage1 || "", legalBusinessName),
+    sampleMessage2: ensureCompliantMessage(body.sampleMessage2?.trim() || gc?.sampleMessage2 || "", legalBusinessName),
+    optInDescription: (body.optInDescription?.trim() || gc?.optInDescription || "").slice(0, 4000),
+    optInKeywords: body.optInKeywords || gc?.optInKeywords || "START",
   };
 
-  // Reuse a failed/draft registration row rather than duplicating
+  // Reuse a failed/draft registration row rather than duplicating.
   const existing = await db.tenDlcRegistration.findFirst({
     where: { tenantId },
     orderBy: { createdAt: "desc" },
@@ -83,10 +98,13 @@ export async function POST(req: NextRequest) {
       : existing ?? (await db.tenDlcRegistration.create({ data: { ...data, tenantId } }));
 
   const result = await advanceTenDlcRegistration(registration.id);
-  return NextResponse.json({ registration: result }, { status: result.status === "failed" ? 500 : 200 });
+  return NextResponse.json(
+    { registration: result, aiUsed: generated?.aiUsed ?? false },
+    { status: result.status === "failed" ? 500 : 200 }
+  );
 }
 
-/** Re-poll / advance the pipeline (e.g. after Twilio review completes). */
+/** Re-poll / advance the pipeline (background auto-advance from the UI poll). */
 export async function PATCH(req: NextRequest) {
   const tenantId = await currentTenantId(req);
   const existing = await db.tenDlcRegistration.findFirst({

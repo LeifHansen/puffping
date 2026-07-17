@@ -192,6 +192,24 @@ export async function advanceTenDlcRegistration(id: string): Promise<TenDlcRegis
       });
     }
 
+    // ---- Attach the tenant's owned numbers to the messaging service ----
+    // (the "phone number attached to campaign" step; idempotent each advance).
+    if (reg.messagingServiceSid) {
+      const numbers = await db.phoneNumber.findMany({
+        where: { tenantId: reg.tenantId, inMessagingService: false },
+      });
+      for (const n of numbers) {
+        try {
+          await client.messaging.v1
+            .services(reg.messagingServiceSid)
+            .phoneNumbers.create({ phoneNumberSid: n.twilioSid });
+          await db.phoneNumber.update({ where: { id: n.id }, data: { inMessagingService: true } });
+        } catch {
+          // already attached, or not eligible until the campaign is approved
+        }
+      }
+    }
+
     // ---- Step 6: A2P campaign on the messaging service ----
     if (!reg.campaignSid) {
       const campaign = await client.messaging.v1
