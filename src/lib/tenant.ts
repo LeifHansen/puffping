@@ -1,15 +1,17 @@
 import type { NextRequest } from "next/server";
 import type { Tenant } from "@prisma/client";
 import { db } from "./db";
+import { getSessionUser } from "./auth";
 
 /**
  * Multi-tenancy chokepoint.
  *
- * The whole app scopes every query by `tenantId`; this module is the ONE place
- * that decides *which* tenant a request belongs to. Today it runs in
- * single-tenant mode and always returns the default tenant. To go multi-tenant,
- * change only `resolveTenant()` — e.g. read the subdomain (`acme.puffping.io`),
- * a session cookie, or a JWT claim — and everything downstream keeps working.
+ * Every query scopes by `tenantId`; this module decides *which* tenant a
+ * request belongs to. It now resolves the tenant from the authenticated
+ * session (see src/lib/auth.ts) — so each signed-in user only ever sees their
+ * own workspace's data. Requests with no valid session fall back to the default
+ * tenant (used by the seed + webhooks); protected API routes are additionally
+ * gated by middleware, so unauthenticated callers never reach a handler.
  */
 
 const DEFAULT_SLUG = "default";
@@ -33,25 +35,20 @@ export async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-/**
- * Resolve the tenant for an incoming request.
- *
- * SINGLE-TENANT (today): always the default tenant.
- * MULTI-TENANT (later): parse `req` — subdomain, `x-tenant` header, session, or
- * JWT — map it to a Tenant row, and return that. The signature already takes the
- * request so callers don't change when this is upgraded.
- */
+/** Resolve the tenant for the current request from the auth session. */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resolveTenant(req?: NextRequest): Promise<Tenant> {
-  // TODO(multi-tenant): derive from req.headers.get("host") subdomain or session.
+  const session = await getSessionUser();
+  if (session) return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
   return getDefaultTenant();
 }
 
-/** Convenience: just the tenant id for the current request. */
+/** Convenience: just the tenant id for the current request (from the session). */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function currentTenantId(req?: NextRequest): Promise<string> {
-  if (!req) return getDefaultTenantId();
-  const tenant = await resolveTenant(req);
-  return tenant.id;
+  const session = await getSessionUser();
+  if (session) return session.tenantId;
+  return getDefaultTenantId();
 }
 
 /**
