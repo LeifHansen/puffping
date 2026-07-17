@@ -1,4 +1,4 @@
-// Textblast.io data model
+// PuffPing data model
 // SQLite for local dev — swap provider/url to Postgres in production.
 //
 // MULTI-TENANCY FRAMEWORK
@@ -26,7 +26,7 @@ datasource db {
 
 model Tenant {
   id        String   @id @default(cuid())
-  slug      String   @unique // subdomain / URL key, e.g. "acme" -> acme.textblast.io
+  slug      String   @unique // subdomain / URL key, e.g. "acme" -> acme.puffping.io
   name      String
   plan      String   @default("free") // free | starter | growth | scale
   createdAt DateTime @default(now())
@@ -312,7 +312,7 @@ model TollFreeVerification {
   @@index([tenantId])
 }
 
-// Numbers purchased through Textblast.io
+// Numbers purchased through PuffPing
 model PhoneNumber {
   id           String   @id @default(cuid())
   tenantId     String

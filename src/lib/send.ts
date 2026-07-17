@@ -92,13 +92,13 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
 // Background worker (singleton per Node process)
 // ---------------------------------------------------------------------------
 
-const g = globalThis as unknown as { __textblastWorker?: boolean };
+const g = globalThis as unknown as { __puffpingWorker?: boolean };
 
 export function ensureSendWorker() {
-  if (g.__textblastWorker) return;
-  g.__textblastWorker = true;
+  if (g.__puffpingWorker) return;
+  g.__puffpingWorker = true;
   void workerLoop().finally(() => {
-    g.__textblastWorker = false;
+    g.__puffpingWorker = false;
   });
 }
 

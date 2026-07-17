@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Textblast.io — High-volume SMS & MMS marketing that stays compliant",
+  title: "PuffPing — High-volume SMS & MMS marketing that stays compliant",
   description:
     "Launch mass text campaigns to hundreds or 100,000+ contacts. Automated 10DLC & toll-free registration, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
 };
@@ -62,10 +62,10 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div
-          className="pointer-events-none absolute inset-0 opacity-70"
+          className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              "radial-gradient(40rem 24rem at 70% -10%, rgba(16,185,129,0.16), transparent 60%), radial-gradient(36rem 20rem at 0% 20%, rgba(16,185,129,0.08), transparent 60%)",
+              "radial-gradient(44rem 26rem at 72% -12%, rgba(16,185,129,0.12), transparent 62%)",
           }}
         />
         <div className="relative mx-auto max-w-6xl px-6 pt-20 pb-16 text-center md:pt-28">
@@ -78,7 +78,7 @@ export default function LandingPage() {
             <span className="text-emerald-400"> lands</span> — and stays compliant.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-400">
-            Textblast.io sends SMS &amp; MMS campaigns to hundreds or 100,000+ contacts, with a two-way inbox,
+            PuffPing sends SMS &amp; MMS campaigns to hundreds or 100,000+ contacts, with a two-way inbox,
             dynamic personalization, AI copy, and carrier registration handled for you.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
@@ -144,7 +144,7 @@ export default function LandingPage() {
               10DLC &amp; toll-free registration without the paperwork maze
             </h2>
             <p className="mt-4 text-zinc-400">
-              High-volume texting requires carrier registration. Textblast.io asks for only the minimum info the
+              High-volume texting requires carrier registration. PuffPing asks for only the minimum info the
               carriers require, then creates and submits everything for you — the customer profile, A2P brand,
               campaign, and messaging service — and tracks approval end to end.
             </p>

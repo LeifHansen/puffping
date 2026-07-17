@@ -174,7 +174,7 @@ export async function advanceTenDlcRegistration(id: string): Promise<TenDlcRegis
     // ---- Step 5: Messaging service ----
     if (!reg.messagingServiceSid) {
       const service = await client.messaging.v1.services.create({
-        friendlyName: `Textblast - ${reg.legalBusinessName}`,
+        friendlyName: `PuffPing - ${reg.legalBusinessName}`,
         inboundRequestUrl: `${appBaseUrl()}/api/webhooks/twilio/inbound`,
         inboundMethod: "POST",
         statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,

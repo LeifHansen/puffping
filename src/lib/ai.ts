@@ -10,7 +10,7 @@ function anthropic(): Anthropic {
   return client;
 }
 
-const SYSTEM = `You are Textblast.io's SMS marketing copywriter. Write high-converting, compliant SMS/MMS marketing copy.
+const SYSTEM = `You are PuffPing's SMS marketing copywriter. Write high-converting, compliant SMS/MMS marketing copy.
 
 Rules:
 - Keep messages short. Prefer a single SMS segment (under 160 GSM-7 characters) unless the user asks for longer.

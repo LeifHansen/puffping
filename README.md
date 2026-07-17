@@ -1,4 +1,4 @@
-# Textblast.io
+# PuffPing
 
 High-volume SMS/MMS marketing platform with an accompanying marketing site.
 Built with Next.js 15, Prisma (SQLite dev / Postgres-ready), Twilio, and the Anthropic API.
@@ -28,7 +28,7 @@ The app is split into two Next.js route groups under `src/app`:
 The schema and every query are already tenant-scoped so the jump to full multi-tenant SaaS is a small, localized change:
 
 - **Schema** — `Tenant`, `User`, and `Membership` models; every messaging-domain row carries a `tenantId`; uniqueness is per-tenant (`@@unique([tenantId, phone])`, `[tenantId, name]`, …). Each tenant can hold its own Twilio subaccount / messaging-service SID.
-- **One chokepoint** — `src/lib/tenant.ts` decides which tenant a request belongs to. Today `resolveTenant()` returns the default tenant (single-tenant mode). To go multi-tenant, change **only** that function (subdomain → `acme.textblast.io`, session, or JWT). Every route already calls `currentTenantId(req)` and scopes reads/writes accordingly.
+- **One chokepoint** — `src/lib/tenant.ts` decides which tenant a request belongs to. Today `resolveTenant()` returns the default tenant (single-tenant mode). To go multi-tenant, change **only** that function (subdomain → `acme.puffping.io`, session, or JWT). Every route already calls `currentTenantId(req)` and scopes reads/writes accordingly.
 - **Sending** — `tenantMessagingServiceSid(tenant)` prefers the tenant's own messaging service and falls back to the global env var; the 10DLC pipeline writes the created messaging service back onto the tenant automatically.
 - **Inbound routing** — the inbound webhook maps the destination number to its owning tenant (falls back to default).
 
@@ -53,7 +53,7 @@ npm run dev
 
 ### Deploy (Fly.io)
 
-`Dockerfile` + `fly.toml` are included and deploy to the **`textblast`** Fly app (`https://fly.io/apps/textblast`). Set the Twilio + Anthropic secrets on that app (`fly secrets set …`) and point the GitHub deploy connection at it. SQLite auto-migrates on boot; uncomment the `[mounts]` volume block for data that survives deploys. Keep one machine always running so the send worker never pauses mid-campaign.
+`Dockerfile` + `fly.toml` are included and deploy to the **`puffping`** Fly app (`https://fly.io/apps/puffping`). Set the Twilio + Anthropic secrets on that app (`fly secrets set …`) and point the GitHub deploy connection at it. SQLite auto-migrates on boot; uncomment the `[mounts]` volume block for data that survives deploys. Keep one machine always running so the send worker never pauses mid-campaign.
 
 ## Scaling beyond SQLite
 

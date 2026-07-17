@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Pricing — Textblast.io",
+  title: "Pricing — PuffPing",
   description: "Simple per-workspace plans for high-volume SMS & MMS marketing. Carrier fees passed through at cost.",
 };
 

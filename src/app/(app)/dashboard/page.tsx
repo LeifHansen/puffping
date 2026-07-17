@@ -14,14 +14,15 @@ import {
 import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
 
-// Categorical slots validated against the smoky dark surface (#131a14):
+// Categorical slots validated against the dark green-black surface:
 // CVD-safe adjacent order, all >= 3:1 contrast.
 const SERIES = {
   outbound: "#3987e5",
-  delivered: "#00a300",
+  delivered: "#10b981",
   inbound: "#d55181",
 };
-const INK = { muted: "#97a68f", grid: "#212b22", secondary: "#bfcab6" };
+// Neutral cool-gray chart ink (matches the beige-free UI palette).
+const INK = { muted: "#6b7572", grid: "#1a221f", secondary: "#c5ccc9" };
 
 type Dash = {
   totals: {
@@ -105,8 +106,8 @@ export default function DashboardPage() {
               <Tooltip
                 cursor={{ stroke: INK.muted, strokeWidth: 1 }}
                 contentStyle={{
-                  background: "#131a14",
-                  border: "1px solid #34412f",
+                  background: "#0f1513",
+                  border: "1px solid #283330",
                   borderRadius: 8,
                   fontSize: 12,
                   color: INK.secondary,

@@ -8,11 +8,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   const { getDefaultTenant } = await import("./lib/tenant");
-  await getDefaultTenant().catch((err) => console.error("[textblast] tenant seed failed:", err));
+  await getDefaultTenant().catch((err) => console.error("[puffping] tenant seed failed:", err));
 
   const { resumePendingSends } = await import("./lib/send");
   const { isTwilioConfigured } = await import("./lib/twilio");
   if (isTwilioConfigured() && process.env.TWILIO_MESSAGING_SERVICE_SID) {
-    await resumePendingSends().catch((err) => console.error("[textblast] resume failed:", err));
+    await resumePendingSends().catch((err) => console.error("[puffping] resume failed:", err));
   }
 }

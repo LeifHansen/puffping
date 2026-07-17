@@ -8,7 +8,7 @@ import { db } from "./db";
  * The whole app scopes every query by `tenantId`; this module is the ONE place
  * that decides *which* tenant a request belongs to. Today it runs in
  * single-tenant mode and always returns the default tenant. To go multi-tenant,
- * change only `resolveTenant()` — e.g. read the subdomain (`acme.textblast.io`),
+ * change only `resolveTenant()` — e.g. read the subdomain (`acme.puffping.io`),
  * a session cookie, or a JWT claim — and everything downstream keeps working.
  */
 
@@ -20,7 +20,7 @@ let cachedDefaultId: string | null = null;
 export async function getDefaultTenant(): Promise<Tenant> {
   return db.tenant.upsert({
     where: { slug: DEFAULT_SLUG },
-    create: { slug: DEFAULT_SLUG, name: "Textblast Workspace" },
+    create: { slug: DEFAULT_SLUG, name: "PuffPing Workspace" },
     update: {},
   });
 }

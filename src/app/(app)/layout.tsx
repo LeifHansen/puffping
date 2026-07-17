@@ -15,9 +15,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="w-56 shrink-0 border-r border-zinc-800 bg-zinc-900/60 px-3 py-5 flex flex-col gap-1">
         <Link href="/" className="mb-4 px-2 text-lg font-bold tracking-tight">
-          <span className="text-emerald-400">Text</span>
-          <span className="text-zinc-100">blast</span>
-          <span className="text-zinc-500">.io</span>
+          🍃 <span className="text-emerald-400">Puff</span>
+          <span className="text-zinc-100">Ping</span>
         </Link>
         {NAV.map((item) => (
           <Link
