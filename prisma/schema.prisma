@@ -50,6 +50,8 @@ model Tenant {
   tenDlc        TenDlcRegistration[]
   tollFree      TollFreeVerification[]
   media         MediaAsset[]
+  automations   Automation[]
+  enrollments   AutomationEnrollment[]
 }
 
 model User {
@@ -114,6 +116,7 @@ model Contact {
   memberships  ListMembership[]
   messages     Message[]
   conversation Conversation?
+  enrollments  AutomationEnrollment[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -364,5 +367,61 @@ model PhoneNumber {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, phoneNumber])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Automations — keyword-triggered auto-responders + multi-step drip sequences
+// ---------------------------------------------------------------------------
+
+model Automation {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  triggerType    String   @default("keyword") // keyword | manual
+  triggerKeyword String? // matched case-insensitively against inbound messages
+  addToListId    String? // optionally add triggering contact to this list
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps       AutomationStep[]
+  enrollments AutomationEnrollment[]
+
+  @@index([tenantId])
+}
+
+model AutomationStep {
+  id           String  @id @default(cuid())
+  automationId String
+  order        Int // 0-based position in the sequence
+  delayMinutes Int     @default(0) // wait after the previous step (step 0: after enrollment)
+  body         String
+  mediaUrl     String?
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+}
+
+// One contact's progress through one automation.
+model AutomationEnrollment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  automationId String
+  contactId    String
+  currentStep  Int      @default(0) // index of the next step to send
+  status       String   @default("active") // active | completed | cancelled
+  nextRunAt    DateTime // when the next step is due
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, contactId])
+  @@index([status, nextRunAt])
   @@index([tenantId])
 }

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { handleKeywordTriggers } from "./automations";
 
 const OPT_OUT_KEYWORDS = ["stop", "stopall", "unsubscribe", "cancel", "end", "quit", "revoke", "optout"];
 const OPT_IN_KEYWORDS = ["start", "unstop", "yes", "subscribe"];
@@ -68,6 +69,14 @@ export async function recordInboundMessage(opts: {
       conversationId: conversation.id,
     },
   });
+
+  // Keyword-triggered automations (e.g. "JOIN" -> welcome drip). Skip opt-out
+  // keywords so unsubscribing never enrolls anyone.
+  if (!OPT_OUT_KEYWORDS.includes(keyword)) {
+    await handleKeywordTriggers({ tenantId, from, body, existingContactId: contact?.id }).catch(
+      (err) => console.error("[puffping] keyword automation trigger failed:", err)
+    );
+  }
 
   return conversation;
 }

@@ -9,6 +9,7 @@ type Campaign = {
   name: string;
   body: string;
   status: string;
+  scheduledAt: string | null;
   createdAt: string;
   lists: { list: { name: string } }[];
   _count: { messages: number };
@@ -37,6 +38,18 @@ export default function CampaignsPage() {
     const data = await res.json();
     setBusy(null);
     if (!res.ok) setError(data.error);
+    load();
+  }
+
+  async function cancelSchedule(c: Campaign) {
+    if (!confirm(`Cancel the scheduled send for "${c.name}"? It reverts to a draft.`)) return;
+    setBusy(c.id);
+    await fetch(`/api/campaigns/${c.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel" }),
+    });
+    setBusy(null);
     load();
   }
 
@@ -79,11 +92,21 @@ export default function CampaignsPage() {
                       Lists: {c.lists.map((l) => l.list.name).join(", ") || "—"} · {c._count.messages} messages ·{" "}
                       {delivered} delivered · {failed} failed
                     </p>
+                    {c.status === "scheduled" && c.scheduledAt && (
+                      <p className="mt-1 text-xs text-emerald-400">
+                        ⏰ Scheduled for {new Date(c.scheduledAt).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     {["draft", "scheduled", "failed"].includes(c.status) && (
                       <Button onClick={() => send(c)} disabled={busy === c.id}>
                         {busy === c.id ? "Sending…" : "Send now"}
+                      </Button>
+                    )}
+                    {c.status === "scheduled" && (
+                      <Button variant="secondary" onClick={() => cancelSchedule(c)} disabled={busy === c.id}>
+                        Cancel
                       </Button>
                     )}
                     <Button variant="ghost" onClick={() => remove(c)}>

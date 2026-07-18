@@ -11,6 +11,7 @@ const PROTECTED_PAGES = [
   "/numbers",
   "/compliance",
   "/media",
+  "/automations",
 ];
 
 // Tenant-scoped API prefixes (401 when signed out). Auth + webhooks stay public.
@@ -25,6 +26,7 @@ const PROTECTED_API = [
   "/api/dashboard",
   "/api/ai",
   "/api/media",
+  "/api/automations",
 ];
 
 export function middleware(req: NextRequest) {

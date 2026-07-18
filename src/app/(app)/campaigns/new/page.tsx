@@ -21,6 +21,7 @@ export default function NewCampaignPage() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState("");
 
   useEffect(() => {
     fetch("/api/lists").then((r) => r.json()).then((d) => setLists(d.lists ?? []));
@@ -72,13 +73,30 @@ export default function NewCampaignPage() {
     setBody(data.variants[0]);
   }
 
-  async function save(sendNow: boolean) {
+  async function save(mode: "now" | "schedule" | "draft") {
     setError(null);
+    if (mode === "schedule") {
+      if (!scheduledAt) {
+        setError("Pick a date & time to schedule for.");
+        return;
+      }
+      if (new Date(scheduledAt).getTime() <= Date.now()) {
+        setError("Scheduled time must be in the future.");
+        return;
+      }
+    }
     setSaving(true);
     const res = await fetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, body, mediaUrl: mediaUrl || null, listIds: selectedLists }),
+      body: JSON.stringify({
+        name,
+        body,
+        mediaUrl: mediaUrl || null,
+        listIds: selectedLists,
+        // Send scheduledAt only in schedule mode; the server sets status accordingly.
+        scheduledAt: mode === "schedule" ? new Date(scheduledAt).toISOString() : null,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -86,7 +104,7 @@ export default function NewCampaignPage() {
       setError(data.error);
       return;
     }
-    if (sendNow) {
+    if (mode === "now") {
       const sendRes = await fetch(`/api/campaigns/${data.campaign.id}/send`, { method: "POST" });
       if (!sendRes.ok) {
         const sendData = await sendRes.json();
@@ -172,12 +190,29 @@ export default function NewCampaignPage() {
             )}
           </Card>
 
+          <Card>
+            <Label>Schedule for later (optional)</Label>
+            <Input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+              className="max-w-xs"
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Leave empty to send now or save as a draft. The scheduler fires it automatically at the
+              chosen time.
+            </p>
+          </Card>
+
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <Button onClick={() => save(true)} disabled={saving}>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => save("now")} disabled={saving}>
               {saving ? "Working…" : "Save & send now"}
             </Button>
-            <Button variant="secondary" onClick={() => save(false)} disabled={saving}>
+            <Button variant="secondary" onClick={() => save("schedule")} disabled={saving}>
+              Schedule
+            </Button>
+            <Button variant="secondary" onClick={() => save("draft")} disabled={saving}>
               Save as draft
             </Button>
           </div>

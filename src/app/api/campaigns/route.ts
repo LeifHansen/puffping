@@ -45,14 +45,24 @@ export async function POST(req: NextRequest) {
   if (!ownedLists.length) {
     return NextResponse.json({ error: "No valid lists selected" }, { status: 400 });
   }
+
+  // Validate an optional future schedule.
+  let scheduledAt: Date | null = null;
+  if (body.scheduledAt) {
+    scheduledAt = new Date(body.scheduledAt);
+    if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "scheduledAt must be a future time" }, { status: 400 });
+    }
+  }
+
   const campaign = await db.campaign.create({
     data: {
       tenantId,
       name: body.name.trim(),
       body: body.body,
       mediaUrl: body.mediaUrl || null,
-      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-      status: body.scheduledAt ? "scheduled" : "draft",
+      scheduledAt,
+      status: scheduledAt ? "scheduled" : "draft",
       lists: { create: ownedLists.map((l) => ({ listId: l.id })) },
     },
   });
