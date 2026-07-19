@@ -12,6 +12,7 @@ type Contact = {
   email: string | null;
   optedOut: boolean;
   memberships: { list: { id: string; name: string } }[];
+  tagLinks: { tag: string }[];
 };
 
 export default function ContactsPage() {
@@ -79,6 +80,18 @@ export default function ContactsPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ optedOut: !c.optedOut }),
+    });
+    load();
+  }
+
+  async function editTags(c: Contact) {
+    const current = c.tagLinks.map((t) => t.tag).join(", ");
+    const next = prompt(`Tags for ${c.phone} (comma-separated):`, current);
+    if (next === null) return;
+    await fetch(`/api/contacts/${c.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: next.split(",").map((t) => t.trim()).filter(Boolean) }),
     });
     load();
   }
@@ -161,6 +174,7 @@ export default function ContactsPage() {
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Email</th>
                 <th className="px-4 py-2.5 font-medium">Lists</th>
+                <th className="px-4 py-2.5 font-medium">Tags</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -175,9 +189,25 @@ export default function ContactsPage() {
                     {c.memberships.map((m) => m.list.name).join(", ") || "—"}
                   </td>
                   <td className="px-4 py-2.5">
+                    {c.tagLinks.length ? (
+                      <span className="flex flex-wrap gap-1">
+                        {c.tagLinks.map((t) => (
+                          <span key={t.tag} className="rounded-full bg-emerald-600/20 px-2 py-0.5 text-[11px] text-emerald-300">
+                            {t.tag}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-600">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
                     <Badge status={c.optedOut ? "failed" : "delivered"} />
                   </td>
                   <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => editTags(c)}>
+                      Tag
+                    </Button>
                     <Button variant="ghost" onClick={() => toggleOptOut(c)}>
                       {c.optedOut ? "Opt in" : "Opt out"}
                     </Button>

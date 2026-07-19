@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   const [contacts, total] = await Promise.all([
     db.contact.findMany({
       where,
-      include: { memberships: { include: { list: true } } },
+      include: { memberships: { include: { list: true } }, tagLinks: true },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,

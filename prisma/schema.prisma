@@ -54,6 +54,8 @@ model Tenant {
   enrollments   AutomationEnrollment[]
   trackedLinks  TrackedLink[]
   linkClicks    LinkClick[]
+  segments      Segment[]
+  suppressions  Suppression[]
 }
 
 model User {
@@ -120,9 +122,21 @@ model Contact {
   conversation Conversation?
   enrollments  AutomationEnrollment[]
   linkClicks   LinkClick[]
+  tagLinks     ContactTag[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
+}
+
+// Contact tags (join model → clean relational segment filtering, Postgres-ready).
+model ContactTag {
+  contactId String
+  tag       String
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tag])
+  @@index([tag])
 }
 
 model ContactList {
@@ -175,6 +189,7 @@ model Campaign {
   scheduledAt DateTime?
   startedAt   DateTime?
   completedAt DateTime?
+  segmentId   String? // when set, audience comes from this segment instead of lists
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -182,6 +197,7 @@ model Campaign {
   lists    CampaignList[]
   messages Message[]
   trackedLinks TrackedLink[]
+  segment  Segment?       @relation(fields: [segmentId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
 }
@@ -448,6 +464,43 @@ model LinkClick {
   @@index([trackedLinkId])
   @@index([tenantId])
   @@index([contactId])
+}
+
+// ---------------------------------------------------------------------------
+// Segments & suppression
+// ---------------------------------------------------------------------------
+
+// A saved audience filter, resolved to a contact set at send/preview time.
+// `definition` is JSON: { listIds?: string[], tags?: string[], tagMatch?: "any"|"all",
+//   engagement?: "clicked"|"replied" }. Opted-out/suppressed contacts are always excluded.
+model Segment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  definition String // JSON (see above)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// Global do-not-contact list. A suppressed phone is also flagged optedOut on any
+// matching contact, so send-time audience queries exclude it without extra joins.
+model Suppression {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String // E.164
+  reason    String   @default("manual") // manual | opt_out | bounced | invalid
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
 }
 
 // One contact's progress through one automation.

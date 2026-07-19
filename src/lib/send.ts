@@ -3,6 +3,8 @@ import { renderTemplate, segmentCount } from "./render";
 import { appBaseUrl, twilio } from "./twilio";
 import { tenantMessagingServiceSid } from "./tenant";
 import { buildLinkMap, rewriteLinks } from "./links";
+import { parseDefinition, segmentWhere } from "./segments";
+import type { Prisma } from "@prisma/client";
 
 /**
  * Campaign sending at scale (hundreds → 100,000+ contacts).
@@ -24,7 +26,7 @@ const MAX_ATTEMPTS = 3;
 export async function queueCampaign(campaignId: string): Promise<{ queued: number }> {
   const campaign = await db.campaign.findUniqueOrThrow({
     where: { id: campaignId },
-    include: { lists: true, tenant: true },
+    include: { lists: true, tenant: true, segment: true },
   });
   if (!tenantMessagingServiceSid(campaign.tenant)) {
     throw new Error(
@@ -43,13 +45,19 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   let queued = 0;
   let cursor: string | undefined;
 
+  // Audience: a segment (saved filter) when set, otherwise the campaign's lists.
+  // Both always exclude opted-out/suppressed contacts.
+  const audienceWhere: Prisma.ContactWhereInput = campaign.segment
+    ? segmentWhere(tenantId, parseDefinition(campaign.segment.definition))
+    : { tenantId, optedOut: false, memberships: { some: { listId: { in: listIds } } } };
+
   // Pre-create tracked short links for every URL in the template once, so the
   // per-contact loop can rewrite links with no DB round-trips.
   const linkMap = await buildLinkMap({ tenantId, campaignId: campaign.id, body: campaign.body });
 
   for (;;) {
     const contacts = await db.contact.findMany({
-      where: { tenantId, optedOut: false, memberships: { some: { listId: { in: listIds } } } },
+      where: audienceWhere,
       orderBy: { id: "asc" },
       take: ENQUEUE_BATCH,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

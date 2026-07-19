@@ -6,16 +6,19 @@ import { Button, Card, Input, Label, PageHeader, Select, TextArea } from "@/comp
 
 type List = { id: string; name: string; _count: { memberships: number } };
 type Template = { id: string; name: string; body: string; mediaUrl: string | null };
+type Segment = { id: string; name: string; count: number };
 type Preview = { audience: number; rendered: string; segments: { segments: number; encoding: string; chars: number } };
 
 export default function NewCampaignPage() {
   const router = useRouter();
   const [lists, setLists] = useState<List[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
   const [name, setName] = useState("");
   const [body, setBody] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
   const [selectedLists, setSelectedLists] = useState<string[]>([]);
+  const [segmentId, setSegmentId] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -26,6 +29,7 @@ export default function NewCampaignPage() {
   useEffect(() => {
     fetch("/api/lists").then((r) => r.json()).then((d) => setLists(d.lists ?? []));
     fetch("/api/templates").then((r) => r.json()).then((d) => setTemplates(d.templates ?? []));
+    fetch("/api/segments").then((r) => r.json()).then((d) => setSegments(d.segments ?? []));
   }, []);
 
   useEffect(() => {
@@ -37,12 +41,12 @@ export default function NewCampaignPage() {
       const res = await fetch("/api/campaigns/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, listIds: selectedLists }),
+        body: JSON.stringify({ body, listIds: segmentId ? [] : selectedLists, segmentId: segmentId || null }),
       });
       if (res.ok) setPreview(await res.json());
     }, 400);
     return () => clearTimeout(t);
-  }, [body, selectedLists]);
+  }, [body, selectedLists, segmentId]);
 
   function toggleList(id: string) {
     setSelectedLists((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -93,7 +97,8 @@ export default function NewCampaignPage() {
         name,
         body,
         mediaUrl: mediaUrl || null,
-        listIds: selectedLists,
+        listIds: segmentId ? [] : selectedLists,
+        segmentId: segmentId || null,
         // Send scheduledAt only in schedule mode; the server sets status accordingly.
         scheduledAt: mode === "schedule" ? new Date(scheduledAt).toISOString() : null,
       }),
@@ -168,11 +173,24 @@ export default function NewCampaignPage() {
           </Card>
 
           <Card>
+            {segments.length > 0 && (
+              <div className="mb-3">
+                <Label>Target a saved segment (optional)</Label>
+                <Select value={segmentId} onChange={(e) => setSegmentId(e.target.value)}>
+                  <option value="">— use lists below —</option>
+                  {segments.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.count.toLocaleString()} contacts)
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
             <Label>Audience — select one or more lists</Label>
             {lists.length === 0 ? (
               <p className="text-sm text-zinc-500">No lists yet. Import contacts first.</p>
             ) : (
-              <div className="mt-1 flex flex-wrap gap-2">
+              <div className={`mt-1 flex flex-wrap gap-2 ${segmentId ? "pointer-events-none opacity-40" : ""}`}>
                 {lists.map((l) => (
                   <button
                     key={l.id}
@@ -187,6 +205,11 @@ export default function NewCampaignPage() {
                   </button>
                 ))}
               </div>
+            )}
+            {segmentId && (
+              <p className="mt-2 text-xs text-emerald-400">
+                Using segment audience — list selection is ignored.
+              </p>
             )}
           </Card>
 

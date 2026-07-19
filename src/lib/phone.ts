@@ -8,9 +8,15 @@ export function normalizePhone(raw: string, defaultCountry: "US" = "US"): string
   if (!raw) return null;
   const cleaned = raw.trim();
   if (!cleaned) return null;
-  const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
-  if (!parsed || !parsed.isValid()) return null;
-  return parsed.number; // E.164
+  try {
+    // libphonenumber-js can throw on some malformed inputs — never let a bad
+    // cell (CSV import) or pasted value (DNC list) crash the request.
+    const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
+    if (!parsed || !parsed.isValid()) return null;
+    return parsed.number; // E.164
+  } catch {
+    return null;
+  }
 }
 
 /** Pretty display: +14155552671 -> (415) 555-2671 */

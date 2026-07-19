@@ -1,5 +1,6 @@
 import type { Automation } from "@prisma/client";
 import { db } from "./db";
+import { isSuppressed } from "./suppression";
 
 /**
  * Automations: keyword-triggered auto-responders and multi-step drip sequences.
@@ -75,6 +76,9 @@ export async function handleKeywordTriggers(opts: {
 }) {
   const keyword = opts.body.trim().toLowerCase();
   if (!keyword) return;
+
+  // Never (re)enroll a suppressed / DNC number.
+  if (await isSuppressed(opts.tenantId, opts.from)) return;
 
   const matches = await db.automation.findMany({
     where: {

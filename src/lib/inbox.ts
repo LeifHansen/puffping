@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { handleKeywordTriggers } from "./automations";
+import { addSuppression, removeSuppression } from "./suppression";
 
 const OPT_OUT_KEYWORDS = ["stop", "stopall", "unsubscribe", "cancel", "end", "quit", "revoke", "optout"];
 const OPT_IN_KEYWORDS = ["start", "unstop", "yes", "subscribe"];
@@ -24,17 +25,13 @@ export async function recordInboundMessage(opts: {
     where: { tenantId_phone: { tenantId, phone: from } },
   });
 
+  // STOP/START drive the suppression list (which mirrors onto contact.optedOut),
+  // so opt-outs work even for numbers we don't have as contacts yet.
   const keyword = body.trim().toLowerCase();
-  if (contact && OPT_OUT_KEYWORDS.includes(keyword)) {
-    await db.contact.update({
-      where: { id: contact.id },
-      data: { optedOut: true, optedOutAt: new Date() },
-    });
-  } else if (contact && OPT_IN_KEYWORDS.includes(keyword)) {
-    await db.contact.update({
-      where: { id: contact.id },
-      data: { optedOut: false, optedOutAt: null },
-    });
+  if (OPT_OUT_KEYWORDS.includes(keyword)) {
+    await addSuppression(tenantId, from, "opt_out");
+  } else if (OPT_IN_KEYWORDS.includes(keyword)) {
+    await removeSuppression(tenantId, from);
   }
 
   const conversation = await db.conversation.upsert({

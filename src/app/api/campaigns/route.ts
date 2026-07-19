@@ -45,16 +45,29 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const tenantId = await currentTenantId(req);
   const body = await req.json();
-  if (!body.name?.trim() || !body.body?.trim() || !Array.isArray(body.listIds) || !body.listIds.length) {
-    return NextResponse.json({ error: "Name, message body, and at least one list are required" }, { status: 400 });
+  const listIds: string[] = Array.isArray(body.listIds) ? body.listIds : [];
+  const segmentId: string | null = body.segmentId ? String(body.segmentId) : null;
+
+  if (!body.name?.trim() || !body.body?.trim()) {
+    return NextResponse.json({ error: "Name and message body are required" }, { status: 400 });
   }
-  // Only accept lists that belong to this tenant.
-  const ownedLists = await db.contactList.findMany({
-    where: { tenantId, id: { in: body.listIds as string[] } },
-    select: { id: true },
-  });
-  if (!ownedLists.length) {
-    return NextResponse.json({ error: "No valid lists selected" }, { status: 400 });
+  if (!segmentId && !listIds.length) {
+    return NextResponse.json({ error: "Select a segment or at least one list" }, { status: 400 });
+  }
+
+  // Validate the audience source belongs to this tenant.
+  let ownedLists: { id: string }[] = [];
+  if (segmentId) {
+    const seg = await db.segment.findFirst({ where: { id: segmentId, tenantId }, select: { id: true } });
+    if (!seg) return NextResponse.json({ error: "Segment not found" }, { status: 400 });
+  } else {
+    ownedLists = await db.contactList.findMany({
+      where: { tenantId, id: { in: listIds } },
+      select: { id: true },
+    });
+    if (!ownedLists.length) {
+      return NextResponse.json({ error: "No valid lists selected" }, { status: 400 });
+    }
   }
 
   // Validate an optional future schedule.
@@ -74,7 +87,8 @@ export async function POST(req: NextRequest) {
       mediaUrl: body.mediaUrl || null,
       scheduledAt,
       status: scheduledAt ? "scheduled" : "draft",
-      lists: { create: ownedLists.map((l) => ({ listId: l.id })) },
+      segmentId,
+      lists: segmentId ? undefined : { create: ownedLists.map((l) => ({ listId: l.id })) },
     },
   });
   return NextResponse.json({ campaign }, { status: 201 });
