@@ -39,7 +39,14 @@ model Tenant {
   twilioAuthToken           String? // encrypt at rest before real multi-tenant launch
   twilioMessagingServiceSid String?
 
+  // Billing (Stripe). Null until the workspace subscribes; the app runs on the
+  // free plan and degrades gracefully when Stripe isn't configured.
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  planStatus           String  @default("active") // active | past_due | canceled
+
   memberships   Membership[]
+  invitations   Invitation[]
   contacts      Contact[]
   lists         ContactList[]
   templates     Template[]
@@ -72,15 +79,33 @@ model User {
 
 // Server-side auth sessions. The opaque token is stored in an httpOnly cookie.
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  token          String   @unique
+  userId         String
+  activeTenantId String? // selected workspace (for users in multiple); null = first
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// A pending invitation to join a workspace. Accepted on signup/login by email.
+model Invitation {
+  id         String    @id @default(cuid())
+  tenantId   String
+  email      String
+  role       String    @default("member") // owner | admin | member
+  token      String    @unique
+  invitedBy  String? // userId of inviter
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([email])
 }
 
 // A user's membership in a tenant. Many-to-many so a user can belong to

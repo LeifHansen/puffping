@@ -54,6 +54,7 @@ export type SessionUser = {
   tenantId: string;
   tenantName: string;
   role: string;
+  workspaces: { tenantId: string; name: string; role: string }[];
 };
 
 /**
@@ -71,23 +72,45 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     where: { token },
     include: {
       user: {
-        include: { memberships: { include: { tenant: true }, orderBy: { createdAt: "asc" }, take: 1 } },
+        include: { memberships: { include: { tenant: true }, orderBy: { createdAt: "asc" } } },
       },
     },
   });
   if (!session || session.expiresAt < new Date()) return null;
 
-  const membership = session.user.memberships[0];
-  if (!membership) return null; // user with no workspace — shouldn't happen
+  const memberships = session.user.memberships;
+  if (!memberships.length) return null; // user with no workspace — shouldn't happen
+
+  // Active workspace: the session's selected tenant if the user still belongs to
+  // it, otherwise the earliest membership.
+  const active =
+    (session.activeTenantId && memberships.find((m) => m.tenantId === session.activeTenantId)) ||
+    memberships[0];
 
   return {
     userId: session.user.id,
     email: session.user.email,
     name: session.user.name,
-    tenantId: membership.tenantId,
-    tenantName: membership.tenant.name,
-    role: membership.role,
+    tenantId: active.tenantId,
+    tenantName: active.tenant.name,
+    role: active.role,
+    workspaces: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, role: m.role })),
   };
+}
+
+/** Switch the active workspace for the current session (must be a member). */
+export async function switchWorkspace(tenantId: string): Promise<boolean> {
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (!token) return false;
+  const session = await db.session.findUnique({
+    where: { token },
+    include: { user: { include: { memberships: true } } },
+  });
+  if (!session) return false;
+  if (!session.user.memberships.some((m) => m.tenantId === tenantId)) return false;
+  await db.session.update({ where: { token }, data: { activeTenantId: tenantId } });
+  return true;
 }
 
 /** Clear the current session (logout): delete the row and expire the cookie. */

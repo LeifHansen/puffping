@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createSession, hashPassword } from "@/lib/auth";
+import { acceptInvitationsForUser } from "@/lib/team";
 
 function slugify(s: string): string {
   return s
@@ -54,6 +55,9 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+
+  // Join any workspaces this email was invited to.
+  await acceptInvitationsForUser(user.id, email);
 
   await createSession(user.id);
   return NextResponse.json({ ok: true });

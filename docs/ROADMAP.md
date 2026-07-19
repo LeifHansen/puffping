@@ -7,15 +7,27 @@ Living checklist for the current work stream. Update as phases land.
 - [x] **Phase 1 — Scheduling & Automations**
       Scheduled campaigns + a background scheduler; keyword-triggered
       auto-responders and multi-step drip sequences (`/automations`).
-- [ ] **Phase 2 — Link tracking & short links**
-      Rewrite URLs in outbound campaigns to short `/l/<code>` links; log
-      per-contact clicks; surface click-through rate on campaigns + dashboard.
-- [ ] **Phase 3 — Segments & suppression**
-      Saved audience segments (tags / field / engagement filters) resolved at
-      send time; a suppression / DNC list auto-excluded from every send.
-- [ ] **Phase 4 — Go multi-tenant for real**
-      Session-driven `resolveTenant()`, team invites + roles, Stripe
-      usage-based billing. **Migrate SQLite → Postgres as the first step here.**
+- [x] **Phase 2 — Link tracking & short links**
+      Short `/l/<code>/<contactId>` links, per-contact click logging, CTR on
+      campaigns.
+- [x] **Phase 3 — Segments & suppression**
+      Saved segments (lists / tags / engagement) resolved at send time; DNC
+      list mirrored onto `optedOut` so every send excludes it.
+- [x] **Phase 4 — Multi-tenant core** (buildable parts done)
+      Session-driven tenant resolution (already in place), workspace switching
+      (`Session.activeTenantId`), team invites + roles (owner/admin/member),
+      create-workspace, and a `/settings` page. Billing scaffolding (plans,
+      usage meter, Stripe Checkout + webhook) that activates on keys.
+
+      **Still infra-gated (need user-provided config, cannot run/verify here):**
+      - **Postgres migration** — flip the Prisma datasource `provider` to
+        `postgresql` and set `DATABASE_URL` to a managed Postgres (Neon / Fly
+        Postgres). Schema is already relational and Postgres-ready. Do this
+        before real multi-tenant launch (SQLite can't handle the concurrency).
+      - **Stripe billing go-live** — set `STRIPE_SECRET_KEY`,
+        `STRIPE_WEBHOOK_SECRET`, and the plan price IDs (`STRIPE_PRICE_STARTER`,
+        `STRIPE_PRICE_GROWTH`). Until then the app stays on the free plan and
+        the upgrade button reports "billing not configured."
 
 ## Queued AFTER all four phases
 

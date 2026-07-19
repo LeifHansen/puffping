@@ -13,6 +13,7 @@ const NAV = [
   { href: "/media", label: "Media & Templates", icon: "🖼️" },
   { href: "/numbers", label: "Numbers", icon: "📞" },
   { href: "/compliance", label: "Compliance", icon: "✅" },
+  { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
