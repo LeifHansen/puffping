@@ -26,8 +26,19 @@ export async function GET(req: NextRequest) {
     byId[s.campaignId][s.status] = s._count;
   }
 
+  // Total tracked-link clicks per campaign.
+  const clickRows = await db.trackedLink.groupBy({
+    by: ["campaignId"],
+    where: { tenantId, campaignId: { not: null } },
+    _sum: { clicks: true },
+  });
+  const clicksById: Record<string, number> = {};
+  for (const r of clickRows) {
+    if (r.campaignId) clicksById[r.campaignId] = r._sum.clicks ?? 0;
+  }
+
   return NextResponse.json({
-    campaigns: campaigns.map((c) => ({ ...c, stats: byId[c.id] ?? {} })),
+    campaigns: campaigns.map((c) => ({ ...c, stats: byId[c.id] ?? {}, clicks: clicksById[c.id] ?? 0 })),
   });
 }
 

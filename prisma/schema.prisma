@@ -52,6 +52,8 @@ model Tenant {
   media         MediaAsset[]
   automations   Automation[]
   enrollments   AutomationEnrollment[]
+  trackedLinks  TrackedLink[]
+  linkClicks    LinkClick[]
 }
 
 model User {
@@ -117,6 +119,7 @@ model Contact {
   messages     Message[]
   conversation Conversation?
   enrollments  AutomationEnrollment[]
+  linkClicks   LinkClick[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -178,6 +181,7 @@ model Campaign {
   tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lists    CampaignList[]
   messages Message[]
+  trackedLinks TrackedLink[]
 
   @@index([tenantId])
 }
@@ -403,6 +407,47 @@ model AutomationStep {
   automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
 
   @@index([automationId])
+}
+
+// ---------------------------------------------------------------------------
+// Link tracking — short links in outbound campaigns + per-contact click logs
+// ---------------------------------------------------------------------------
+
+// One tracked short link per (campaign, target URL). The `code` is the public
+// capability key in /l/<code>/<contactId>.
+model TrackedLink {
+  id         String   @id @default(cuid())
+  tenantId   String
+  campaignId String?
+  code       String   @unique
+  targetUrl  String
+  clicks     Int      @default(0) // denormalized total (all contacts)
+  createdAt  DateTime @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  clickEvents LinkClick[]
+
+  @@unique([campaignId, targetUrl])
+  @@index([tenantId])
+}
+
+// One row per actual click (created lazily on redirect — clicks << sends).
+model LinkClick {
+  id            String   @id @default(cuid())
+  tenantId      String
+  trackedLinkId String
+  contactId     String?
+  userAgent     String?
+  clickedAt     DateTime @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trackedLink TrackedLink @relation(fields: [trackedLinkId], references: [id], onDelete: Cascade)
+  contact     Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([trackedLinkId])
+  @@index([tenantId])
+  @@index([contactId])
 }
 
 // One contact's progress through one automation.

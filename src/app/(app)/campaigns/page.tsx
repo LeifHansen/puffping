@@ -14,6 +14,7 @@ type Campaign = {
   lists: { list: { name: string } }[];
   _count: { messages: number };
   stats: Record<string, number>;
+  clicks: number;
 };
 
 export default function CampaignsPage() {
@@ -79,6 +80,7 @@ export default function CampaignsPage() {
           {campaigns.map((c) => {
             const delivered = c.stats.delivered ?? 0;
             const failed = (c.stats.failed ?? 0) + (c.stats.undelivered ?? 0);
+            const ctr = delivered > 0 ? Math.round((c.clicks / delivered) * 100) : 0;
             return (
               <Card key={c.id}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -90,7 +92,8 @@ export default function CampaignsPage() {
                     <p className="mt-1 line-clamp-1 text-sm text-zinc-400">{c.body}</p>
                     <p className="mt-1 text-xs text-zinc-500">
                       Lists: {c.lists.map((l) => l.list.name).join(", ") || "—"} · {c._count.messages} messages ·{" "}
-                      {delivered} delivered · {failed} failed
+                      {delivered} delivered · {failed} failed · {c.clicks} clicks
+                      {delivered > 0 && c.clicks > 0 ? ` (${ctr}% CTR)` : ""}
                     </p>
                     {c.status === "scheduled" && c.scheduledAt && (
                       <p className="mt-1 text-xs text-emerald-400">

@@ -2,6 +2,7 @@ import { db } from "./db";
 import { renderTemplate, segmentCount } from "./render";
 import { appBaseUrl, twilio } from "./twilio";
 import { tenantMessagingServiceSid } from "./tenant";
+import { buildLinkMap, rewriteLinks } from "./links";
 
 /**
  * Campaign sending at scale (hundreds → 100,000+ contacts).
@@ -42,6 +43,10 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   let queued = 0;
   let cursor: string | undefined;
 
+  // Pre-create tracked short links for every URL in the template once, so the
+  // per-contact loop can rewrite links with no DB round-trips.
+  const linkMap = await buildLinkMap({ tenantId, campaignId: campaign.id, body: campaign.body });
+
   for (;;) {
     const contacts = await db.contact.findMany({
       where: { tenantId, optedOut: false, memberships: { some: { listId: { in: listIds } } } },
@@ -54,7 +59,9 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
 
     const rows = contacts
       .map((contact) => {
-        const body = renderTemplate(campaign.body, contact);
+        const rendered = renderTemplate(campaign.body, contact);
+        // Rewrite links to tracked short URLs (per-contact for click attribution).
+        const body = rewriteLinks(rendered, linkMap, contact.id);
         if (!body.trim() && !mediaUrls) return null;
         return {
           tenantId,

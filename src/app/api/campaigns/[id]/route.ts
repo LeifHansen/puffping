@@ -31,10 +31,26 @@ export async function GET(req: NextRequest, { params }: Params) {
   `;
   const replyCount = Number(replyRows[0]?.n ?? 0);
 
+  // Click tracking: total clicks + unique contacts who clicked.
+  const clickAgg = await db.trackedLink.aggregate({
+    where: { campaignId: id },
+    _sum: { clicks: true },
+  });
+  const uniqueRows = await db.$queryRaw<{ n: bigint | number }[]>`
+    SELECT COUNT(DISTINCT lc."contactId") AS n
+    FROM "LinkClick" lc
+    JOIN "TrackedLink" tl ON tl.id = lc."trackedLinkId"
+    WHERE tl."campaignId" = ${id} AND lc."contactId" IS NOT NULL
+  `;
+  const clicks = clickAgg._sum.clicks ?? 0;
+  const uniqueClicks = Number(uniqueRows[0]?.n ?? 0);
+
   return NextResponse.json({
     campaign,
     stats: Object.fromEntries(stats.map((s) => [s.status, s._count])),
     replyCount,
+    clicks,
+    uniqueClicks,
   });
 }
 
