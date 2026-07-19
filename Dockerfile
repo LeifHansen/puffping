@@ -14,5 +14,7 @@ RUN npm run build
 
 EXPOSE 3000
 ENV NODE_ENV=production
-# Create/migrate the SQLite schema on boot, then serve.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npm run start"]
+# Map the Neon connection string (Fly secret) to DATABASE_URL, sync the Postgres
+# schema on boot (fresh DB = create only; non-interactive push refuses
+# destructive changes rather than dropping data), then serve.
+CMD ["sh", "-c", "export DATABASE_URL=\"${NEON_PRODUCTION_DATABASE_URL:-$DATABASE_URL}\"; npx prisma db push --skip-generate && npm run start"]

@@ -16,7 +16,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+  // Production (Fly) provides the Neon URL via NEON_PRODUCTION_DATABASE_URL,
+  // mapped to DATABASE_URL at container start (see Dockerfile). Local dev sets
+  // DATABASE_URL directly.
   url      = env("DATABASE_URL")
 }
 

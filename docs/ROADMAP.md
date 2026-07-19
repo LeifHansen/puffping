@@ -19,11 +19,15 @@ Living checklist for the current work stream. Update as phases land.
       create-workspace, and a `/settings` page. Billing scaffolding (plans,
       usage meter, Stripe Checkout + webhook) that activates on keys.
 
-      **Still infra-gated (need user-provided config, cannot run/verify here):**
-      - **Postgres migration** — flip the Prisma datasource `provider` to
-        `postgresql` and set `DATABASE_URL` to a managed Postgres (Neon / Fly
-        Postgres). Schema is already relational and Postgres-ready. Do this
-        before real multi-tenant launch (SQLite can't handle the concurrency).
+      **Postgres migration — DONE.** Provider flipped to `postgresql`; the Neon
+      connection string is the Fly secret `NEON_PRODUCTION_DATABASE_URL`, mapped
+      to `DATABASE_URL` at container start (Dockerfile). Verified against a real
+      local Postgres 16: schema push, all lib logic, both raw SQL queries
+      (identifiers quoted for case-sensitivity), and a full runtime signup →
+      workspace → billing → segment flow. Local dev now uses a local Postgres
+      (see `.env`, gitignored).
+
+      **Still infra-gated (need user-provided config):**
       - **Stripe billing go-live** — set `STRIPE_SECRET_KEY`,
         `STRIPE_WEBHOOK_SECRET`, and the plan price IDs (`STRIPE_PRICE_STARTER`,
         `STRIPE_PRICE_GROWTH`). Until then the app stays on the free plan and

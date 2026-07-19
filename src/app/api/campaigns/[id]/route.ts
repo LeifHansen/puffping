@@ -25,9 +25,9 @@ export async function GET(req: NextRequest, { params }: Params) {
   const replyRows = await db.$queryRaw<{ n: bigint | number }[]>`
     SELECT COUNT(*) AS n FROM "Message" m
     WHERE m.direction = 'inbound'
-      AND m.tenantId = ${tenantId}
-      AND m.createdAt >= ${since}
-      AND m.phone IN (SELECT DISTINCT phone FROM "Message" WHERE campaignId = ${id})
+      AND m."tenantId" = ${tenantId}
+      AND m."createdAt" >= ${since}
+      AND m.phone IN (SELECT DISTINCT phone FROM "Message" WHERE "campaignId" = ${id})
   `;
   const replyCount = Number(replyRows[0]?.n ?? 0);
 

@@ -6,15 +6,11 @@ primary_region = "iad"
   dockerfile = "Dockerfile"
 
 [env]
-  # SQLite lives inside the machine by default. For durable data across
-  # deploys, create a volume (`fly volumes create textblast_data -s 1`),
-  # uncomment [mounts] below, and change this to file:/data/textblast.db
-  DATABASE_URL = "file:/app/prisma/prod.db"
+  # Database is managed Postgres (Neon). The connection string is a Fly secret
+  # named NEON_PRODUCTION_DATABASE_URL, mapped to DATABASE_URL at container
+  # start (see Dockerfile CMD) — set it with:
+  #   fly secrets set NEON_PRODUCTION_DATABASE_URL="postgresql://…?sslmode=require"
   APP_BASE_URL = "https://puffping.com"
-
-# [mounts]
-#   source = "textblast_data"
-#   destination = "/data"
 
 [http_service]
   internal_port = 3000
