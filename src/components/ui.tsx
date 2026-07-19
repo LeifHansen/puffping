@@ -115,11 +115,3 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
     </div>
   );
 }
-
-/** Reusable logo lockup (image mark + wordmark) used in headers/sidebars. */
-export function LogoMark({ className = "" }: { className?: string }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src="/puff-ping-logo.png" alt="PuffPing" className={`mix-blend-multiply ${className}`} />
-  );
-}

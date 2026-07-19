@@ -109,7 +109,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
 
 const g = globalThis as unknown as { __puffpingWorker?: boolean };
 
-export function ensureSendWorker() {
+function ensureSendWorker() {
   if (g.__puffpingWorker) return;
   g.__puffpingWorker = true;
   void workerLoop().finally(() => {

@@ -16,7 +16,7 @@ export function renderTemplate(body: string, contact: ContactLike): string {
 
 export type ContactLike = Pick<Contact, "phone" | "firstName" | "lastName" | "email" | "customFields">;
 
-export function contactFields(contact: ContactLike): Record<string, string> {
+function contactFields(contact: ContactLike): Record<string, string> {
   const fields: Record<string, string> = {
     first_name: contact.firstName ?? "",
     last_name: contact.lastName ?? "",
@@ -43,13 +43,6 @@ export function snakeCase(s: string): string {
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
-}
-
-/** Extract the dynamic field names used in a template body. */
-export function extractFields(body: string): string[] {
-  const out = new Set<string>();
-  for (const m of body.matchAll(/\{\{\s*([\w.]+)\s*(?:\|[^}]*)?\}\}/g)) out.add(m[1].toLowerCase());
-  return [...out];
 }
 
 const GSM7 =

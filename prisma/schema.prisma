@@ -1,15 +1,13 @@
-// PuffPing data model
-// SQLite for local dev — swap provider/url to Postgres in production.
+// PuffPing data model — PostgreSQL (Neon in production, a local Postgres for dev).
 //
-// MULTI-TENANCY FRAMEWORK
-// -----------------------
+// MULTI-TENANCY
+// -------------
 // Every tenant-owned row carries a `tenantId`. A `Tenant` is a workspace /
-// organization. Today the app runs in single-tenant mode: one default tenant,
-// resolved by `getCurrentTenant()` in src/lib/tenant.ts. To go multi-tenant
-// later, change ONLY that resolver (subdomain / session / JWT) — every query is
-// already scoped by tenantId, and uniqueness is per-tenant, so no schema or
-// query changes are needed. Twilio credentials can live per-tenant (see Tenant)
-// and fall back to global env vars until then.
+// organization. The active tenant is resolved from the auth session by
+// `resolveTenant()` / `currentTenantId()` in src/lib/tenant.ts (falling back to
+// a default tenant for the seed + webhooks). Every query is scoped by tenantId
+// and uniqueness is per-tenant. Twilio credentials can live per-tenant (see
+// Tenant) and fall back to global env vars.
 
 generator client {
   provider = "prisma-client-js"

@@ -5,9 +5,9 @@ import sharp from "sharp";
 import { appBaseUrl } from "./twilio";
 import { isOpenAiConfigured, openai, OPENAI_VISION_MODEL } from "./openai-client";
 
-// Where uploaded media lives. On Fly, mount a volume and set MEDIA_DIR for
-// durability across deploys (otherwise it's ephemeral like the SQLite db).
-export function mediaDir(): string {
+// Where uploaded media lives. On Fly, mount a volume and set MEDIA_DIR so
+// uploads persist across deploys (otherwise the machine's disk is ephemeral).
+function mediaDir(): string {
   return process.env.MEDIA_DIR || path.join(process.cwd(), "uploads");
 }
 

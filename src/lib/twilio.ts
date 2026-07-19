@@ -16,7 +16,7 @@ export function twilio(): Twilio.Twilio {
   return client;
 }
 
-export class TwilioNotConfiguredError extends Error {
+class TwilioNotConfiguredError extends Error {
   constructor() {
     super(
       "Twilio is not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in your environment."

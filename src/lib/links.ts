@@ -24,7 +24,7 @@ function randomCode(len = 7): string {
   return out;
 }
 
-export function extractUrls(body: string): string[] {
+function extractUrls(body: string): string[] {
   return [...new Set(body.match(URL_RE) ?? [])];
 }
 

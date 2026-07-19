@@ -23,7 +23,7 @@ function minutesFromNow(minutes: number): Date {
  * Re-triggering an existing enrollment restarts the sequence. Also handles the
  * optional "add to list" side effect.
  */
-export async function enrollContact(automation: Automation, contactId: string) {
+async function enrollContact(automation: Automation, contactId: string) {
   const steps = await db.automationStep.findMany({
     where: { automationId: automation.id },
     orderBy: { order: "asc" },
