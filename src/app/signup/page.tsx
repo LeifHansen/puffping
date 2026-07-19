@@ -10,8 +10,9 @@ export default async function SignupPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
-        <Link href="/" className="mb-8 block text-center text-xl font-bold tracking-tight">
-          🍃 <span className="text-emerald-400">Puff</span>Ping
+        <Link href="/" className="mb-8 flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/puff-ping-logo.png" alt="PuffPing" className="h-14 w-auto mix-blend-multiply" />
         </Link>
         <AuthForm mode="signup" />
         <p className="mt-4 text-center text-sm text-zinc-400">

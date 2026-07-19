@@ -31,7 +31,12 @@ Living checklist for the current work stream. Update as phases land.
 
 ## Queued AFTER all four phases
 
-- [ ] **Retro-chic UX redesign matched to the logo.**
+- [x] **Retro-chic UX redesign matched to the logo.** Done — cream paper theme,
+      chunky rounded type, forest-green sticker outlines with offset shadows,
+      lime + violet accents; logo wired into marketing header/hero/footer, app
+      sidebar, auth pages, and favicon (`mix-blend-multiply` blends the logo's
+      near-white background into the cream). Themed by remapping the zinc +
+      emerald scales in `globals.css`, so every page re-skinned at once.
       Brief: "make it look like a website from the 1990s but modern at the same
       time — retro chic," themed to the PuffPing cloud logo. Apply across the
       marketing site AND the app.

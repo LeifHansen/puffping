@@ -68,14 +68,16 @@ export default function LandingPage() {
               "radial-gradient(44rem 26rem at 72% -12%, rgba(16,185,129,0.12), transparent 62%)",
           }}
         />
-        <div className="relative mx-auto max-w-6xl px-6 pt-20 pb-16 text-center md:pt-28">
-          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-800/60 bg-emerald-950/40 px-3 py-1 text-xs font-medium text-emerald-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        <div className="relative mx-auto max-w-6xl px-6 pt-16 pb-16 text-center md:pt-20">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/puff-ping-logo.png" alt="PuffPing" className="mx-auto mb-8 h-24 w-auto md:h-28 mix-blend-multiply" />
+          <span className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-800 bg-emerald-900 px-3 py-1 text-xs font-bold text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-brand-violet)]" />
             Fully automated 10DLC &amp; toll-free registration
           </span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold leading-tight tracking-tight md:text-6xl">
+          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
             Mass texting that actually
-            <span className="text-emerald-400"> lands</span> — and stays compliant.
+            <span className="text-emerald-600"> lands</span> — and stays compliant.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-400">
             PuffPing sends SMS &amp; MMS campaigns to hundreds or 100,000+ contacts, with a two-way inbox,
@@ -84,13 +86,13 @@ export default function LandingPage() {
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
               href="/dashboard"
-              className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition-colors"
+              className="retro-press rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
             >
               Get started free
             </Link>
             <Link
               href="/pricing"
-              className="rounded-md border border-zinc-700 px-5 py-2.5 text-sm font-semibold text-zinc-200 hover:border-zinc-500 transition-colors"
+              className="retro-press rounded-xl border-2 border-[color:var(--color-zinc-600)] bg-zinc-900 px-5 py-2.5 text-sm font-bold text-zinc-200 shadow-[4px_4px_0_0_rgba(196,182,141,0.7)] active:shadow-[1px_1px_0_0_rgba(196,182,141,0.7)]"
             >
               See pricing
             </Link>
@@ -104,9 +106,9 @@ export default function LandingPage() {
               ["2-way", "real-time inbox"],
               ["10DLC", "auto-registered"],
             ].map(([stat, label]) => (
-              <div key={label} className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-5">
-                <div className="text-2xl font-bold text-emerald-400 md:text-3xl">{stat}</div>
-                <div className="mt-1 text-xs text-zinc-400">{label}</div>
+              <div key={label} className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 px-4 py-5 retro-shadow">
+                <div className="text-2xl font-extrabold text-emerald-600 md:text-3xl">{stat}</div>
+                <div className="mt-1 text-xs font-bold text-zinc-400">{label}</div>
               </div>
             ))}
           </div>
@@ -125,10 +127,10 @@ export default function LandingPage() {
           {FEATURES.map((f) => (
             <div
               key={f.title}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-colors hover:border-emerald-800/60"
+              className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 p-5 retro-shadow transition-colors hover:border-emerald-600"
             >
               <div className="text-2xl" aria-hidden>{f.icon}</div>
-              <h3 className="mt-3 font-semibold">{f.title}</h3>
+              <h3 className="mt-3 font-extrabold text-emerald-700">{f.title}</h3>
               <p className="mt-1.5 text-sm text-zinc-400">{f.body}</p>
             </div>
           ))}
@@ -162,7 +164,7 @@ export default function LandingPage() {
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6">
+          <div className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 p-6 retro-shadow">
             <div className="space-y-3">
               {[
                 ["Customer profile", "approved"],
@@ -170,9 +172,9 @@ export default function LandingPage() {
                 ["Campaign use case", "verified"],
                 ["Messaging service", "live"],
               ].map(([label, state]) => (
-                <div key={label} className="flex items-center justify-between rounded-lg bg-zinc-900/70 px-4 py-3">
-                  <span className="text-sm text-zinc-300">{label}</span>
-                  <span className="rounded-full border border-emerald-800 bg-emerald-950/50 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                <div key={label} className="flex items-center justify-between rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-4 py-3">
+                  <span className="text-sm font-bold text-zinc-300">{label}</span>
+                  <span className="rounded-full border-2 border-emerald-800 bg-emerald-900 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
                     {state}
                   </span>
                 </div>
@@ -189,11 +191,11 @@ export default function LandingPage() {
         </div>
         <div className="mt-12 grid gap-4 md:grid-cols-4">
           {STEPS.map((s) => (
-            <div key={s.n} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">
+            <div key={s.n} className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 p-5 retro-shadow">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 text-sm font-extrabold text-white">
                 {s.n}
               </div>
-              <h3 className="mt-3 font-semibold">{s.title}</h3>
+              <h3 className="mt-3 font-extrabold text-emerald-700">{s.title}</h3>
               <p className="mt-1.5 text-sm text-zinc-400">{s.body}</p>
             </div>
           ))}
@@ -202,14 +204,14 @@ export default function LandingPage() {
 
       {/* CTA */}
       <section className="mx-auto max-w-6xl px-6 pb-24">
-        <div className="relative overflow-hidden rounded-2xl border border-emerald-800/40 bg-gradient-to-br from-emerald-950/60 to-zinc-900 px-8 py-14 text-center">
-          <h2 className="text-3xl font-bold tracking-tight">Ready to send your first blast?</h2>
+        <div className="relative overflow-hidden rounded-2xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-900 px-8 py-14 text-center retro-shadow">
+          <h2 className="text-3xl font-extrabold tracking-tight text-emerald-700">Ready to send your first blast?</h2>
           <p className="mx-auto mt-3 max-w-xl text-zinc-400">
             Spin up a workspace, import your list, and reach every customer in minutes.
           </p>
           <Link
             href="/dashboard"
-            className="mt-7 inline-block rounded-md bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-500 transition-colors"
+            className="retro-press mt-7 inline-block rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
           >
             Open the app
           </Link>

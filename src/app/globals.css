@@ -1,41 +1,99 @@
 @import "tailwindcss";
 
 /*
- * PuffPing theme — minimalist, with a subtle stoner-green vibe.
- * Cool, low-chroma green-blacks for surfaces and NEUTRAL COOL-GRAY text
- * (deliberately no beige/taupe warmth). Emerald is the single accent.
- * The background stays quiet — one faint emerald glow, nothing busy.
+ * PuffPing theme — "retro-chic": a 1990s sticker-book vibe made modern.
+ * Cream paper background, chunky rounded type, bold forest-green sticker
+ * outlines with offset drop-shadows, lime + violet accents — straight off the
+ * PuffPing cloud logo. The whole app is re-skinned by remapping the zinc scale
+ * (dark -> light/cream, inverted) and the emerald scale (-> logo greens), so
+ * existing pages pick up the theme without per-element edits.
  */
 @theme {
-  /* Surfaces: deep, cool green-black → charcoal */
-  --color-zinc-950: #080b0a; /* app background */
-  --color-zinc-900: #0f1513; /* cards / sidebar */
-  --color-zinc-800: #1a221f; /* borders, hovers */
-  --color-zinc-700: #283330; /* stronger borders */
-  --color-zinc-600: #3a4541;
-  /* Text: neutral cool grays, minimal green cast, zero warmth */
-  --color-zinc-500: #6b7572; /* muted / captions */
-  --color-zinc-400: #9aa4a0; /* secondary text */
-  --color-zinc-300: #c5ccc9;
-  --color-zinc-200: #dfe3e1;
-  --color-zinc-100: #eef1f0; /* primary text */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Surfaces & text — zinc scale INVERTED to a warm cream/ink palette.
+     (Pages use bg-zinc-900 for "cards" and text-zinc-100 for "primary text",
+     so 900 must be a light surface and 100 must be dark ink.) */
+  --color-zinc-950: #f3ead6; /* app background (cream paper) */
+  --color-zinc-900: #fffdf7; /* cards / raised surfaces (warm white) */
+  --color-zinc-800: #ece1c8; /* hover fills / soft borders */
+  --color-zinc-700: #ddd0ad; /* borders */
+  --color-zinc-600: #c4b68d; /* stronger borders */
+  --color-zinc-500: #8b8261; /* muted / caption text */
+  --color-zinc-400: #6d6a4d; /* secondary text */
+  --color-zinc-300: #4a4734; /* secondary-strong text */
+  --color-zinc-200: #333026; /* near-primary */
+  --color-zinc-100: #23231a; /* primary text (ink) */
+
+  /* Greens — emerald scale remapped to the logo's forest + lime. */
+  --color-emerald-950: #eef6e1;
+  --color-emerald-900: #e2f0cf; /* badge / pill tint backgrounds */
+  --color-emerald-800: #b9d98f; /* badge / pill borders */
+  --color-emerald-700: #2a6b2f;
+  --color-emerald-600: #2f8a3e; /* primary button fill */
+  --color-emerald-500: #3aa049; /* hover / focus ring */
+  --color-emerald-400: #2f7d34; /* accent text on cream */
+  --color-emerald-300: #2c7331; /* pill text */
+  --color-emerald-200: #234e26;
+
+  /* Status colors nudged so they read on light surfaces. */
+  --color-sky-300: #1b6ea6;
+  --color-sky-800: #a9d3ec;
+  --color-sky-900: #dcecf8;
+  --color-amber-300: #986713;
+  --color-amber-800: #e6c893;
+  --color-amber-900: #f6ead0;
+  --color-red-100: #7a1f1f;
+  --color-red-300: #b3382f;
+  --color-red-400: #bd392f;
+  --color-red-800: #e6b0aa;
+  --color-red-900: #f7dedb;
+
+  /* Brand tokens (use directly for retro detailing). */
+  --color-brand-forest: #1f6b34;
+  --color-brand-ink: #17512a; /* sticker outline */
+  --color-brand-lime: #7fb93e;
+  --color-brand-violet: #6d28d9;
+  --color-brand-cream: #f3ead6;
+
+  /* Chunky rounded display + friendly body. */
+  --font-sans: "Nunito", "Quicksand", ui-rounded, "Hiragino Maru Gothic ProN",
+    "Varela Round", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-zinc-950);
-  /* One quiet emerald glow, top-right — nothing else. */
-  background-image: radial-gradient(48rem 30rem at 88% -12%, rgba(16, 185, 129, 0.06), transparent 62%);
+  color: var(--color-zinc-100);
+  background-color: var(--color-brand-cream);
+  /* Soft cloud wash — warm whites + a faint lime/lavender nod to the logo. */
+  background-image:
+    radial-gradient(42rem 26rem at 12% -8%, rgba(255, 255, 255, 0.85), transparent 60%),
+    radial-gradient(48rem 30rem at 92% -6%, rgba(127, 185, 62, 0.10), transparent 60%),
+    radial-gradient(40rem 28rem at 78% 108%, rgba(109, 40, 217, 0.07), transparent 60%);
   background-attachment: fixed;
 }
 
-::selection {
-  background: rgba(16, 185, 129, 0.28);
+/* Chunky rounded headings with a retro-tight set. */
+h1, h2, h3 {
+  font-weight: 800;
+  letter-spacing: -0.015em;
 }
 
-/* Thin, quiet scrollbars for a more polished feel */
+::selection {
+  background: rgba(127, 185, 62, 0.35);
+}
+
+/* Playful but tidy scrollbars. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-zinc-700) transparent;
+  scrollbar-color: var(--color-zinc-600) transparent;
+}
+
+/* Retro helpers: sticker outline + chunky offset shadow that "presses". */
+.retro-shadow {
+  box-shadow: 4px 4px 0 0 rgba(23, 81, 42, 0.16);
+}
+.retro-press {
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+.retro-press:active:not(:disabled) {
+  transform: translate(2px, 2px);
 }
