@@ -1,0 +1,551 @@
+// PuffPing data model — PostgreSQL (Neon in production, a local Postgres for dev).
+//
+// MULTI-TENANCY
+// -------------
+// Every tenant-owned row carries a `tenantId`. A `Tenant` is a workspace /
+// organization. The active tenant is resolved from the auth session by
+// `resolveTenant()` / `currentTenantId()` in src/lib/tenant.ts (falling back to
+// a default tenant for the seed + webhooks). Every query is scoped by tenantId
+// and uniqueness is per-tenant. Twilio credentials can live per-tenant (see
+// Tenant) and fall back to global env vars.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Production (Fly) provides the Neon URL via NEON_PRODUCTION_DATABASE_URL,
+  // mapped to DATABASE_URL at container start (see Dockerfile). Local dev sets
+  // DATABASE_URL directly.
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique // subdomain / URL key, e.g. "acme" -> acme.puffping.io
+  name      String
+  plan      String   @default("free") // free | starter | growth | scale
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Per-tenant Twilio config. Null => fall back to global env vars (single-tenant).
+  // In full multi-tenant mode each tenant gets its own Twilio subaccount +
+  // messaging service + 10DLC brand.
+  twilioSubaccountSid       String?
+  twilioAuthToken           String? // encrypt at rest before real multi-tenant launch
+  twilioMessagingServiceSid String?
+
+  // Billing (Stripe). Null until the workspace subscribes; the app runs on the
+  // free plan and degrades gracefully when Stripe isn't configured.
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  planStatus           String  @default("active") // active | past_due | canceled
+
+  memberships   Membership[]
+  invitations   Invitation[]
+  contacts      Contact[]
+  lists         ContactList[]
+  templates     Template[]
+  campaigns     Campaign[]
+  messages      Message[]
+  conversations Conversation[]
+  numbers       PhoneNumber[]
+  tenDlc        TenDlcRegistration[]
+  tollFree      TollFreeVerification[]
+  media         MediaAsset[]
+  automations   Automation[]
+  enrollments   AutomationEnrollment[]
+  trackedLinks  TrackedLink[]
+  linkClicks    LinkClick[]
+  segments      Segment[]
+  suppressions  Suppression[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String? // scrypt: "salt:hash"; null = SSO-only user (future)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+  sessions    Session[]
+}
+
+// Server-side auth sessions. The opaque token is stored in an httpOnly cookie.
+model Session {
+  id             String   @id @default(cuid())
+  token          String   @unique
+  userId         String
+  activeTenantId String? // selected workspace (for users in multiple); null = first
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A pending invitation to join a workspace. Accepted on signup/login by email.
+model Invitation {
+  id         String    @id @default(cuid())
+  tenantId   String
+  email      String
+  role       String    @default("member") // owner | admin | member
+  token      String    @unique
+  invitedBy  String? // userId of inviter
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([email])
+}
+
+// A user's membership in a tenant. Many-to-many so a user can belong to
+// multiple workspaces later; `role` gates permissions.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      String   @default("owner") // owner | admin | member
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Messaging domain (all tenant-scoped)
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id           String    @id @default(cuid())
+  tenantId     String
+  phone        String // E.164
+  firstName    String?
+  lastName     String?
+  email        String?
+  customFields String? // JSON object of extra CSV columns
+  optedOut     Boolean   @default(false)
+  optedOutAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships  ListMembership[]
+  messages     Message[]
+  conversation Conversation?
+  enrollments  AutomationEnrollment[]
+  linkClicks   LinkClick[]
+  tagLinks     ContactTag[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// Contact tags (join model → clean relational segment filtering, Postgres-ready).
+model ContactTag {
+  contactId String
+  tag       String
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tag])
+  @@index([tag])
+}
+
+model ContactList {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships ListMembership[]
+  campaigns   CampaignList[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model ListMembership {
+  contactId String
+  listId    String
+  addedAt   DateTime @default(now())
+
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, listId])
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  body      String
+  mediaUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  body        String
+  mediaUrl    String? // MMS attachment URL
+  status      String    @default("draft") // draft | scheduled | sending | sent | failed
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  segmentId   String? // when set, audience comes from this segment instead of lists
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lists    CampaignList[]
+  messages Message[]
+  trackedLinks TrackedLink[]
+  segment  Segment?       @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+}
+
+model CampaignList {
+  campaignId String
+  listId     String
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  list     ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, listId])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  tenantId     String
+  direction    String // outbound | inbound
+  phone        String // counterparty E.164
+  body         String
+  mediaUrls    String? // JSON array
+  twilioSid    String?  @unique
+  status       String   @default("queued") // queued | sending | sent | delivered | undelivered | failed | received
+  errorCode    String?
+  errorMessage String?
+  numSegments  Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contactId  String?
+  contact    Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([campaignId, status])
+  @@index([tenantId, phone])
+  @@index([createdAt])
+}
+
+model Conversation {
+  id              String   @id @default(cuid())
+  tenantId        String
+  phone           String // counterparty E.164
+  lastMessageAt   DateTime @default(now())
+  lastMessageBody String   @default("")
+  unreadCount     Int      @default(0)
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId String?   @unique
+  contact   Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  messages  Message[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// A2P 10DLC registration state machine. One row per brand registration.
+model TenDlcRegistration {
+  id       String @id @default(cuid())
+  tenantId String
+
+  // Business info (the minimum Twilio requires for a Standard/Low-Volume brand)
+  legalBusinessName  String
+  businessType       String // Sole Proprietorship | Partnership | LLC | Corporation | Co-operative | Non-profit
+  ein                String // EIN / tax ID
+  einIssuingCountry  String @default("US")
+  website            String
+  addressStreet      String
+  addressCity        String
+  addressState       String
+  addressPostalCode  String
+  addressCountry     String @default("US")
+  vertical           String @default("RETAIL")
+  stockExchange      String?
+  stockTicker        String?
+
+  // Authorized representative (minimum: one contact)
+  contactFirstName String
+  contactLastName  String
+  contactEmail     String
+  contactPhone     String
+  contactTitle     String @default("Owner")
+  contactJobPosition String @default("CEO")
+
+  // Campaign (use case) info
+  useCaseCategory   String @default("MARKETING")
+  useCaseDescription String
+  sampleMessage1    String
+  sampleMessage2    String
+  optInDescription  String // how end users consent
+  optInKeywords     String @default("START")
+
+  // Twilio resource SIDs, populated as the pipeline advances
+  customerProfileSid  String?
+  trustProductSid     String?
+  brandSid            String?
+  campaignSid         String?
+  messagingServiceSid String?
+
+  status       String   @default("draft") // draft | submitting | pending_review | brand_approved | campaign_pending | registered | failed
+  currentStep  String   @default("not_started")
+  failureReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// Toll-free verification. One row per toll-free number being verified.
+model TollFreeVerification {
+  id       String @id @default(cuid())
+  tenantId String
+
+  phoneNumberSid String // Twilio IncomingPhoneNumber SID of the toll-free number
+  phoneNumber    String
+
+  businessName       String
+  businessWebsite    String
+  addressStreet      String
+  addressCity        String
+  addressState       String
+  addressPostalCode  String
+  addressCountry     String @default("US")
+  contactFirstName   String
+  contactLastName    String
+  contactEmail       String
+  contactPhone       String
+
+  optInType         String @default("VERBAL") // VERBAL | WEB_FORM | PAPER_FORM | VIA_TEXT | MOBILE_QR_CODE
+  optInImageUrls    String? // JSON array of URLs proving opt-in flow
+  useCaseCategory   String @default("MARKETING")
+  useCaseSummary    String
+  productionMessageSample String
+  messageVolume     String @default("10,000")
+
+  verificationSid String?
+  status          String  @default("draft") // draft | submitted | in_review | approved | rejected
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// Media library — images & videos used for MMS campaigns.
+model MediaAsset {
+  id                String   @id @default(cuid())
+  tenantId          String
+  kind              String // image | video
+  filename          String
+  mimeType          String
+  sizeBytes         Int
+  width             Int?
+  height            Int?
+  storagePath       String // path on disk relative to the media dir
+  optimizedForMobile Boolean @default(false)
+  sourceAssetId     String? // set when this is an optimized derivative of another asset
+  altText           String? // AI-generated alt/caption from the optimize step
+  createdAt         DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// Numbers purchased through PuffPing
+model PhoneNumber {
+  id           String   @id @default(cuid())
+  tenantId     String
+  phoneNumber  String // E.164
+  twilioSid    String   @unique
+  friendlyName String?
+  numberType   String // local | tollfree
+  capabilities String? // JSON: { sms, mms, voice }
+  inMessagingService Boolean @default(false)
+  purchasedAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Automations — keyword-triggered auto-responders + multi-step drip sequences
+// ---------------------------------------------------------------------------
+
+model Automation {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  triggerType    String   @default("keyword") // keyword | manual
+  triggerKeyword String? // matched case-insensitively against inbound messages
+  addToListId    String? // optionally add triggering contact to this list
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps       AutomationStep[]
+  enrollments AutomationEnrollment[]
+
+  @@index([tenantId])
+}
+
+model AutomationStep {
+  id           String  @id @default(cuid())
+  automationId String
+  order        Int // 0-based position in the sequence
+  delayMinutes Int     @default(0) // wait after the previous step (step 0: after enrollment)
+  body         String
+  mediaUrl     String?
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+}
+
+// ---------------------------------------------------------------------------
+// Link tracking — short links in outbound campaigns + per-contact click logs
+// ---------------------------------------------------------------------------
+
+// One tracked short link per (campaign, target URL). The `code` is the public
+// capability key in /l/<code>/<contactId>.
+model TrackedLink {
+  id         String   @id @default(cuid())
+  tenantId   String
+  campaignId String?
+  code       String   @unique
+  targetUrl  String
+  clicks     Int      @default(0) // denormalized total (all contacts)
+  createdAt  DateTime @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  clickEvents LinkClick[]
+
+  @@unique([campaignId, targetUrl])
+  @@index([tenantId])
+}
+
+// One row per actual click (created lazily on redirect — clicks << sends).
+model LinkClick {
+  id            String   @id @default(cuid())
+  tenantId      String
+  trackedLinkId String
+  contactId     String?
+  userAgent     String?
+  clickedAt     DateTime @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trackedLink TrackedLink @relation(fields: [trackedLinkId], references: [id], onDelete: Cascade)
+  contact     Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([trackedLinkId])
+  @@index([tenantId])
+  @@index([contactId])
+}
+
+// ---------------------------------------------------------------------------
+// Segments & suppression
+// ---------------------------------------------------------------------------
+
+// A saved audience filter, resolved to a contact set at send/preview time.
+// `definition` is JSON: { listIds?: string[], tags?: string[], tagMatch?: "any"|"all",
+//   engagement?: "clicked"|"replied" }. Opted-out/suppressed contacts are always excluded.
+model Segment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  definition String // JSON (see above)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// Global do-not-contact list. A suppressed phone is also flagged optedOut on any
+// matching contact, so send-time audience queries exclude it without extra joins.
+model Suppression {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String // E.164
+  reason    String   @default("manual") // manual | opt_out | bounced | invalid
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// One contact's progress through one automation.
+model AutomationEnrollment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  automationId String
+  contactId    String
+  currentStep  Int      @default(0) // index of the next step to send
+  status       String   @default("active") // active | completed | cancelled
+  nextRunAt    DateTime // when the next step is due
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, contactId])
+  @@index([status, nextRunAt])
+  @@index([tenantId])
+}
