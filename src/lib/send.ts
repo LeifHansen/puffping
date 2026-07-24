@@ -4,7 +4,7 @@ import { appBaseUrl, twilio } from "./twilio";
 import { tenantMessagingServiceSid } from "./tenant";
 import { buildLinkMap, rewriteLinks } from "./links";
 import { parseDefinition, segmentWhere } from "./segments";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 /**
  * Campaign sending at scale (hundreds → 100,000+ contacts).
@@ -30,7 +30,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   });
   if (!tenantMessagingServiceSid(campaign.tenant)) {
     throw new Error(
-      "No Messaging Service configured. Complete 10DLC or toll-free registration first, or set TWILIO_MESSAGING_SERVICE_SID."
+      "No Messaging Service configured. Set the TWILIO_MESSAGING_SERVICE_SID secret to the platform's approved messaging service."
     );
   }
 
@@ -112,9 +112,15 @@ const g = globalThis as unknown as { __puffpingWorker?: boolean };
 function ensureSendWorker() {
   if (g.__puffpingWorker) return;
   g.__puffpingWorker = true;
-  void workerLoop().finally(() => {
-    g.__puffpingWorker = false;
-  });
+  void workerLoop()
+    .catch((err) => {
+      // Never let a transient DB/Twilio error become an unhandled rejection
+      // (fatal in Node) — log and let the next enqueue/boot re-arm the worker.
+      console.error("[puffping] send worker crashed:", err);
+    })
+    .finally(() => {
+      g.__puffpingWorker = false;
+    });
 }
 
 async function workerLoop() {
@@ -122,21 +128,25 @@ async function workerLoop() {
   const statusCallback = `${appBaseUrl()}/api/webhooks/twilio/status`;
 
   for (;;) {
-    const pending = await db.message.findMany({
+    const candidates = await db.message.findMany({
       where: { status: "pending", direction: "outbound" },
       orderBy: { createdAt: "asc" },
       take: CLAIM_BATCH,
       include: { tenant: true },
     });
-    if (!pending.length) break;
+    if (!candidates.length) break;
 
-    // Claim the batch so a second worker (dev hot-reload) won't double-send
-    await db.message.updateMany({
-      where: { id: { in: pending.map((m) => m.id) } },
-      data: { status: "sending" },
-    });
-
-    const queue = [...pending];
+    // ATOMIC claim: only rows still `pending` flip to `sending`, and only the
+    // rows we actually claimed get sent. Prevents double-texting when multiple
+    // workers run (multi-machine deploy, boot resume racing an active worker).
+    const claimedRows = await db.$queryRaw<{ id: string }[]>`
+      UPDATE "Message" SET status = 'sending'
+      WHERE id IN (${Prisma.join(candidates.map((m) => m.id))}) AND status = 'pending'
+      RETURNING id
+    `;
+    const claimedIds = new Set(claimedRows.map((r) => r.id));
+    const queue = candidates.filter((m) => claimedIds.has(m.id));
+    if (!queue.length) continue; // another worker claimed this batch
     async function sender() {
       for (;;) {
         const msg = queue.shift();

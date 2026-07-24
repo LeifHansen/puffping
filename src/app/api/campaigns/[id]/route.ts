@@ -100,6 +100,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const tenantId = await currentTenantId(req);
   const { id } = await params;
+  const owned = await db.campaign.findFirst({ where: { id, tenantId }, select: { id: true } });
+  if (!owned) return NextResponse.json({ ok: true });
+  // Cancel any not-yet-sent messages FIRST — deleting the campaign alone would
+  // orphan them (campaignId → null) while the worker keeps blasting them out.
+  const cancelled = await db.message.updateMany({
+    where: { campaignId: id, status: "pending" },
+    data: { status: "canceled", errorMessage: "Campaign deleted before send" },
+  });
   await db.campaign.deleteMany({ where: { id, tenantId } });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, cancelled: cancelled.count });
 }

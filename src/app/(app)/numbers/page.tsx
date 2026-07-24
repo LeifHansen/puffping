@@ -27,6 +27,7 @@ export default function NumbersPage() {
   const [searching, setSearching] = useState(false);
   const [buying, setBuying] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeIsError, setNoticeIsError] = useState(false);
 
   const loadOwned = useCallback(async () => {
     const res = await fetch("/api/numbers").then((r) => r.json());
@@ -38,22 +39,41 @@ export default function NumbersPage() {
   }, [loadOwned]);
 
   async function search() {
-    setSearching(true);
-    setNotice(null);
-    setSelected([]);
-    const params = new URLSearchParams({ type });
-    if (areaCode) params.set("areaCode", areaCode);
-    if (contains) params.set("contains", contains);
-    const res = await fetch(`/api/numbers/search?${params}`);
-    const data = await res.json();
-    setSearching(false);
-    if (!res.ok) {
-      setNotice(data.error);
-      setAvailable([]);
+    // Client-side validation with clear messages (Twilio's own errors are terse).
+    if (type === "local" && areaCode && !/^\d{3}$/.test(areaCode.trim())) {
+      setNotice("Area code must be exactly 3 digits (e.g. 415).");
+      setNoticeIsError(true);
       return;
     }
-    setAvailable(data.numbers ?? []);
-    if (!data.numbers?.length) setNotice("No numbers matched — try a different area code or pattern.");
+    if (contains && !/^[a-zA-Z0-9*]{1,10}$/.test(contains.trim())) {
+      setNotice("Pattern can only contain letters, digits, or * (max 10 characters).");
+      setNoticeIsError(true);
+      return;
+    }
+    setSearching(true);
+    setNotice(null);
+    setNoticeIsError(false);
+    setSelected([]);
+    const params = new URLSearchParams({ type });
+    if (areaCode && type === "local") params.set("areaCode", areaCode.trim());
+    if (contains) params.set("contains", contains.trim());
+    try {
+      const res = await fetch(`/api/numbers/search?${params}`);
+      const data = await res.json();
+      setSearching(false);
+      if (!res.ok) {
+        setNotice(data.error || `Search failed (HTTP ${res.status})`);
+        setNoticeIsError(true);
+        setAvailable([]);
+        return;
+      }
+      setAvailable(data.numbers ?? []);
+      if (!data.numbers?.length) setNotice("No numbers matched — try a different area code or pattern.");
+    } catch {
+      setSearching(false);
+      setNotice("Search request failed — check your connection and try again.");
+      setNoticeIsError(true);
+    }
   }
 
   function toggle(pn: string) {
@@ -65,6 +85,7 @@ export default function NumbersPage() {
     if (!confirm(`Purchase ${selected.length} number(s)? Twilio charges apply.`)) return;
     setBuying(true);
     setNotice(null);
+    setNoticeIsError(false);
     const res = await fetch("/api/numbers/purchase", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,8 +95,15 @@ export default function NumbersPage() {
     setBuying(false);
     const parts = [];
     if (data.purchased?.length) parts.push(`Purchased: ${data.purchased.join(", ")}`);
-    if (data.failed?.length) parts.push(`Failed: ${data.failed.map((f: { phoneNumber: string }) => f.phoneNumber).join(", ")}`);
+    if (data.failed?.length) {
+      parts.push(
+        `Failed: ${data.failed
+          .map((f: { phoneNumber: string; error: string }) => `${f.phoneNumber} (${f.error})`)
+          .join(" · ")}`
+      );
+    }
     setNotice(parts.join(" · ") || data.error);
+    setNoticeIsError(Boolean(data.failed?.length || (!data.purchased?.length && data.error)));
     setSelected([]);
     setAvailable((prev) => prev.filter((n) => !data.purchased?.includes(n.phoneNumber)));
     loadOwned();
@@ -116,7 +144,11 @@ export default function NumbersPage() {
             </Button>
           )}
         </div>
-        {notice && <p className="mt-3 text-sm text-emerald-300">{notice}</p>}
+        {notice && (
+          <p className={`mt-3 text-sm font-bold ${noticeIsError ? "text-red-400" : "text-emerald-300"}`}>
+            {notice}
+          </p>
+        )}
       </Card>
 
       {available.length > 0 && (

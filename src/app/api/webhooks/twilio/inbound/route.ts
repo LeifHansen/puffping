@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-twilio-signature") ?? "";
   const url = `${appBaseUrl()}/api/webhooks/twilio/inbound`;
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? "";
-  if (authToken && !Twilio.validateRequest(authToken, signature, url, params)) {
+  // Fail CLOSED: without the auth token we can't verify authenticity, so a
+  // misconfigured deploy must not accept forged inbound messages.
+  if (!authToken) return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+  if (!Twilio.validateRequest(authToken, signature, url, params)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
   }
 

@@ -35,26 +35,35 @@ export async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-/** Resolve the tenant for the current request from the auth session. */
+/**
+ * Resolve the tenant for the current request from the auth session.
+ * SECURITY: throws when there is no valid session — an invalid/expired cookie
+ * must never fall back to the default tenant's data. The default tenant is
+ * reserved for webhooks/seed paths, which call getDefaultTenantId() directly.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resolveTenant(req?: NextRequest): Promise<Tenant> {
   const session = await getSessionUser();
-  if (session) return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
-  return getDefaultTenant();
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
 }
 
 /** Convenience: just the tenant id for the current request (from the session). */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function currentTenantId(req?: NextRequest): Promise<string> {
   const session = await getSessionUser();
-  if (session) return session.tenantId;
-  return getDefaultTenantId();
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return session.tenantId;
 }
 
 /**
- * The messaging service SID to send from for a tenant: prefer the tenant's own
- * (full multi-tenant), else fall back to the global env var (single-tenant).
+ * The messaging service SID to send from. CURRENT MODEL: every workspace sends
+ * through the platform's single approved Messaging Service
+ * (TWILIO_MESSAGING_SERVICE_SID) on the main Twilio account — purchased
+ * numbers are attached to its pool but tracked per-tenant. A tenant-specific
+ * service (per-tenant Twilio / ISV subaccounts) is only used if the env var is
+ * unset.
  */
 export function tenantMessagingServiceSid(tenant: Pick<Tenant, "twilioMessagingServiceSid">): string | undefined {
-  return tenant.twilioMessagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID || undefined;
+  return process.env.TWILIO_MESSAGING_SERVICE_SID || tenant.twilioMessagingServiceSid || undefined;
 }

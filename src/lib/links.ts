@@ -9,8 +9,10 @@ import { appBaseUrl } from "./twilio";
  * even at 100k+ recipients).
  */
 
-// Matches http(s) URLs up to the next whitespace.
-const URL_RE = /https?:\/\/[^\s]+/g;
+// Matches http(s) URLs up to the next whitespace, excluding trailing sentence
+// punctuation ("Visit https://x.com." must track https://x.com, not "x.com.").
+// Used by BOTH extraction and rewriting so the two always agree.
+const URL_RE = /https?:\/\/[^\s]*[^\s.,;:!?)"']/g;
 
 const CODE_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"; // no ambiguous chars
 
