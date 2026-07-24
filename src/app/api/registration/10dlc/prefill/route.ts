@@ -1,21 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateCampaignContent } from "@/lib/tendlc-ai";
+import { NextResponse } from "next/server";
 
 /**
- * Preview the AI-generated 10DLC campaign content from minimal inputs, so the
- * user can review/edit before submitting. Uses OpenAI when configured; returns
- * compliant defaults otherwise.
+ * DISABLED: self-serve 10DLC registration is platform-managed — every
+ * workspace sends through PuffPing's approved Messaging Service, so there is
+ * nothing for AI to prefill. Restore from git history (and re-enable the
+ * wizard in ../route.ts) if per-tenant registration returns.
  */
-export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  const businessName = String(body.businessName ?? "").trim();
-  if (!businessName) {
-    return NextResponse.json({ error: "Business name is required" }, { status: 400 });
-  }
-  const { content, aiUsed } = await generateCampaignContent({
-    businessName,
-    website: body.website,
-    description: body.description,
-  });
-  return NextResponse.json({ content, aiUsed });
+export async function POST() {
+  return NextResponse.json(
+    { error: "10DLC registration is managed by PuffPing.", disabled: true },
+    { status: 503 }
+  );
 }

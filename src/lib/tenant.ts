@@ -52,9 +52,13 @@ export async function currentTenantId(req?: NextRequest): Promise<string> {
 }
 
 /**
- * The messaging service SID to send from for a tenant: prefer the tenant's own
- * (full multi-tenant), else fall back to the global env var (single-tenant).
+ * The messaging service SID to send from. CURRENT MODEL: every workspace sends
+ * through the platform's single approved Messaging Service
+ * (TWILIO_MESSAGING_SERVICE_SID) on the main Twilio account — purchased
+ * numbers are attached to its pool but tracked per-tenant. A tenant-specific
+ * service (per-tenant Twilio / ISV subaccounts) is only used if the env var is
+ * unset.
  */
 export function tenantMessagingServiceSid(tenant: Pick<Tenant, "twilioMessagingServiceSid">): string | undefined {
-  return tenant.twilioMessagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID || undefined;
+  return process.env.TWILIO_MESSAGING_SERVICE_SID || tenant.twilioMessagingServiceSid || undefined;
 }

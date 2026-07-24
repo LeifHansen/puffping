@@ -30,7 +30,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   });
   if (!tenantMessagingServiceSid(campaign.tenant)) {
     throw new Error(
-      "No Messaging Service configured. Complete 10DLC or toll-free registration first, or set TWILIO_MESSAGING_SERVICE_SID."
+      "No Messaging Service configured. Set the TWILIO_MESSAGING_SERVICE_SID secret to the platform's approved messaging service."
     );
   }
 

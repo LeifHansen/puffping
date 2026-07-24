@@ -50,7 +50,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "1", title: "Register", body: "Complete automated 10DLC or toll-free verification with the minimum info carriers require." },
+  { n: "1", title: "Get a number", body: "Buy local or toll-free numbers — they join our carrier-approved 10DLC sending pool instantly." },
   { n: "2", title: "Import", body: "Upload your contacts. Numbers are cleaned and formatted; lists organize your audience." },
   { n: "3", title: "Compose", body: "Write with dynamic fields or let AI draft it. Preview segments and audience size live." },
   { n: "4", title: "Send & track", body: "Blast at scale and watch delivery, replies, and opt-outs roll in on the dashboard." },
@@ -73,7 +73,7 @@ export default function LandingPage() {
           <img src="/puff-ping-logo.png" alt="PuffPing" className="mx-auto mb-8 h-24 w-auto md:h-28 mix-blend-multiply" />
           <span className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-800 bg-emerald-900 px-3 py-1 text-xs font-bold text-emerald-300">
             <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-brand-violet)]" />
-            Fully automated 10DLC &amp; toll-free registration
+            10DLC compliance included — send under our approved campaign
           </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
             Mass texting that actually
@@ -141,21 +141,21 @@ export default function LandingPage() {
       <section id="compliance" className="border-y border-zinc-800/70 bg-zinc-900/30">
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-20 md:grid-cols-2">
           <div>
-            <span className="text-sm font-semibold text-emerald-400">Compliance, automated</span>
+            <span className="text-sm font-semibold text-emerald-400">Compliance, included</span>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">
-              10DLC &amp; toll-free registration without the paperwork maze
+              10DLC compliance without the paperwork maze
             </h2>
             <p className="mt-4 text-zinc-400">
-              High-volume texting requires carrier registration. PuffPing asks for only the minimum info the
-              carriers require, then creates and submits everything for you — the customer profile, A2P brand,
-              campaign, and messaging service — and tracks approval end to end.
+              High-volume texting requires carrier registration — so we did it for you. Every workspace sends
+              through PuffPing&apos;s carrier-approved A2P 10DLC campaign from day one. Buy a number and it joins
+              the approved sending pool automatically; no forms, no waiting on carrier review.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-zinc-300">
               {[
-                "One short form → full A2P 10DLC brand + campaign",
+                "Send under an approved 10DLC campaign from day one",
+                "Purchased numbers auto-join the sending pool",
                 "Toll-free verification for instant high throughput",
                 "STOP / HELP auto-replies and opt-out enforcement built in",
-                "Resumable pipeline — pick up right where carrier review left off",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-emerald-400">✓</span>
