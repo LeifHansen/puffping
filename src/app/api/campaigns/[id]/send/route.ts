@@ -19,8 +19,20 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   const campaign = await db.campaign.findFirst({ where: { id, tenantId } });
   if (!campaign) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (campaign.status === "sending") {
-    return NextResponse.json({ error: "Campaign is already sending" }, { status: 409 });
+
+  // ATOMIC claim: flip to `sending` only from a sendable state, in one
+  // conditional update. Two concurrent clicks (or a click racing the
+  // scheduler) can't both enqueue — the loser gets a 409. Also prevents
+  // re-blasting an already-sent campaign.
+  const claim = await db.campaign.updateMany({
+    where: { id, tenantId, status: { in: ["draft", "scheduled", "failed"] } },
+    data: { status: "sending", startedAt: new Date() },
+  });
+  if (claim.count === 0) {
+    return NextResponse.json(
+      { error: `Campaign is ${campaign.status === "sending" ? "already sending" : `already ${campaign.status}`}` },
+      { status: 409 }
+    );
   }
   try {
     const result = await queueCampaign(id);

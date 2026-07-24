@@ -20,6 +20,17 @@ type Message = {
   mediaUrls: string | null;
 };
 
+/** Safe parse — one malformed row must not crash the whole inbox. */
+function parseMediaUrls(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((u): u is string => typeof u === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -130,11 +141,10 @@ export default function InboxPage() {
                         m.direction === "outbound" ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-100"
                       }`}
                     >
-                      {m.mediaUrls &&
-                        (JSON.parse(m.mediaUrls) as string[]).map((u) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img key={u} src={u} alt="MMS" className="mb-1 max-h-48 rounded-lg" />
-                        ))}
+                      {parseMediaUrls(m.mediaUrls).map((u) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={u} src={u} alt="MMS" className="mb-1 max-h-48 rounded-lg" />
+                      ))}
                       <p className="whitespace-pre-wrap">{m.body}</p>
                       <p className="mt-0.5 text-right text-[10px] opacity-60">
                         {new Date(m.createdAt).toLocaleTimeString()} · {m.status}

@@ -5,13 +5,18 @@ import { db } from "@/lib/db";
 /**
  * Stripe webhook: keeps each workspace's plan + subscription status in sync.
  * Verifies the Stripe-Signature header against STRIPE_WEBHOOK_SECRET (manual
- * HMAC — no SDK dependency). No-op if the webhook secret isn't configured.
+ * HMAC — no SDK dependency). Fails closed (503) when the secret is missing so
+ * forged events can never change a workspace's plan.
  */
+const SIGNATURE_TOLERANCE_SECONDS = 300; // Stripe-recommended replay window
+
 function verifyStripeSignature(payload: string, header: string, secret: string): boolean {
   // Header: t=timestamp,v1=signature[,v1=...]
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=")));
-  const timestamp = parts["t"];
-  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+  const timestamp = Number(parts["t"]);
+  if (!Number.isFinite(timestamp)) return false;
+  if (Math.abs(Date.now() / 1000 - timestamp) > SIGNATURE_TOLERANCE_SECONDS) return false; // replay guard
+  const expected = createHmac("sha256", secret).update(`${parts["t"]}.${payload}`).digest("hex");
   const provided = parts["v1"] ?? "";
   const a = Buffer.from(expected);
   const b = Buffer.from(provided);
@@ -23,10 +28,11 @@ export async function POST(req: NextRequest) {
   const payload = await req.text();
   const sig = req.headers.get("stripe-signature") ?? "";
 
-  if (secret) {
-    if (!verifyStripeSignature(payload, sig, secret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
-    }
+  // Fail CLOSED: without the secret we cannot verify authenticity, and these
+  // events change billing state.
+  if (!secret) return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+  if (!verifyStripeSignature(payload, sig, secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   let event: { type: string; data: { object: Record<string, unknown> } };

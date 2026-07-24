@@ -11,8 +11,9 @@ import { renderTemplate } from "./render";
  *     the current step and scheduling the next.
  *
  * A reentrancy guard prevents overlapping ticks within a process; the singleton
- * interval prevents multiple schedulers. (Multi-machine coordination — a proper
- * DB claim/lease — comes with the Postgres move in the multi-tenant phase.)
+ * interval prevents multiple schedulers per process. Cross-machine safety comes
+ * from the atomic status-conditioned claims below (campaign launch) — only one
+ * machine wins each claim.
  */
 
 const TICK_MS = 30_000;
@@ -120,9 +121,12 @@ async function processDueEnrollments() {
     const next = e.currentStep + 1;
     const nextStep = e.automation.steps[next];
     if (nextStep) {
+      // Schedule from the step's DUE time, not from now — tick latency must not
+      // compound into drift across a long sequence.
+      const base = Math.max(e.nextRunAt.getTime(), Date.now() - TICK_MS);
       await db.automationEnrollment.update({
         where: { id: e.id },
-        data: { currentStep: next, nextRunAt: new Date(Date.now() + nextStep.delayMinutes * 60_000) },
+        data: { currentStep: next, nextRunAt: new Date(base + nextStep.delayMinutes * 60_000) },
       });
     } else {
       await db.automationEnrollment.update({

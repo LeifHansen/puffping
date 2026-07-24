@@ -65,7 +65,8 @@ export function segmentCount(body: string): { segments: number; encoding: "GSM-7
     const segments = len <= 160 ? 1 : Math.ceil(len / 153);
     return { segments, encoding: "GSM-7", chars: len };
   }
-  const chars = [...body].length;
+  // Carriers count UTF-16 code units (an emoji = 2), not code points.
+  const chars = body.length;
   const segments = chars <= 70 ? 1 : Math.ceil(chars / 67);
   return { segments, encoding: "UCS-2", chars };
 }

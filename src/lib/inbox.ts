@@ -21,6 +21,15 @@ export async function recordInboundMessage(opts: {
 }) {
   const { tenantId, from, body, twilioSid, mediaUrls, numSegments } = opts;
 
+  // Idempotency: Twilio retries webhooks on any non-2xx. A duplicate delivery
+  // must be a clean no-op, not a unique-violation 500 (which triggers more retries).
+  if (twilioSid) {
+    const dupe = await db.message.findUnique({ where: { twilioSid }, select: { conversationId: true } });
+    if (dupe) {
+      return db.conversation.findUnique({ where: { id: dupe.conversationId ?? "" } });
+    }
+  }
+
   const contact = await db.contact.findUnique({
     where: { tenantId_phone: { tenantId, phone: from } },
   });

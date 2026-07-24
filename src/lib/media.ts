@@ -17,6 +17,10 @@ export function mediaPublicUrl(id: string): string {
 }
 
 export function kindFromMime(mime: string): "image" | "video" | null {
+  // SVG is rejected: it can carry scripts, and media-raw serves bytes on the
+  // app origin — a scripted SVG would be stored XSS. (MMS doesn't accept SVG
+  // anyway.) Raster images and video only.
+  if (mime === "image/svg+xml") return null;
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   return null;

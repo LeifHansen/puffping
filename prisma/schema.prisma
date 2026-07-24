@@ -226,6 +226,8 @@ model Campaign {
   segment  Segment?       @relation(fields: [segmentId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
+  // Scheduler hot path: WHERE status='scheduled' AND scheduledAt <= now
+  @@index([status, scheduledAt])
 }
 
 model CampaignList {
@@ -266,6 +268,8 @@ model Message {
   @@index([campaignId, status])
   @@index([tenantId, phone])
   @@index([createdAt])
+  // Send-worker hot path: WHERE status='pending' AND direction ORDER BY createdAt
+  @@index([status, createdAt])
 }
 
 model Conversation {

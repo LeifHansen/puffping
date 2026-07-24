@@ -50,10 +50,10 @@ export function planById(id: string): Plan {
   return PLANS.find((p) => p.id === id) ?? PLANS[0];
 }
 
-/** Outbound messages sent by a tenant since the start of the current month. */
+/** Outbound messages sent by a tenant since the start of the current UTC month. */
 export async function monthlyUsage(tenantId: string): Promise<number> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   return db.message.count({
     where: { tenantId, direction: "outbound", createdAt: { gte: start } },
   });

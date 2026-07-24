@@ -50,12 +50,15 @@ export async function POST(req: NextRequest) {
     def.listIds = owned.map((l) => l.id);
   }
 
-  const existing = await db.segment.findFirst({ where: { tenantId, name } });
-  if (existing) return NextResponse.json({ error: "A segment with that name already exists" }, { status: 409 });
-
-  const segment = await db.segment.create({
-    data: { tenantId, name, definition: JSON.stringify(def) },
-  });
+  let segment;
+  try {
+    segment = await db.segment.create({
+      data: { tenantId, name, definition: JSON.stringify(def) },
+    });
+  } catch {
+    // Unique (tenantId, name) — race-safe duplicate handling
+    return NextResponse.json({ error: "A segment with that name already exists" }, { status: 409 });
+  }
   const count = await db.contact.count({ where: segmentWhere(tenantId, def) });
   return NextResponse.json({ segment: { ...segment, def, count } }, { status: 201 });
 }

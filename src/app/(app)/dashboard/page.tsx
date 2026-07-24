@@ -45,13 +45,18 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
 export default function DashboardPage() {
   const [data, setData] = useState<Dash | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Dashboard failed to load (HTTP ${r.status})`);
+        setData(await r.json());
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Dashboard failed to load"));
   }, []);
 
+  if (error) return <p className="text-sm font-bold text-red-400">{error}</p>;
   if (!data) return <p className="text-sm text-zinc-500">Loading…</p>;
 
   const t = data.totals;

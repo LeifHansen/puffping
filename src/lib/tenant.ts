@@ -35,20 +35,25 @@ export async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-/** Resolve the tenant for the current request from the auth session. */
+/**
+ * Resolve the tenant for the current request from the auth session.
+ * SECURITY: throws when there is no valid session — an invalid/expired cookie
+ * must never fall back to the default tenant's data. The default tenant is
+ * reserved for webhooks/seed paths, which call getDefaultTenantId() directly.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resolveTenant(req?: NextRequest): Promise<Tenant> {
   const session = await getSessionUser();
-  if (session) return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
-  return getDefaultTenant();
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
 }
 
 /** Convenience: just the tenant id for the current request (from the session). */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function currentTenantId(req?: NextRequest): Promise<string> {
   const session = await getSessionUser();
-  if (session) return session.tenantId;
-  return getDefaultTenantId();
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return session.tenantId;
 }
 
 /**
