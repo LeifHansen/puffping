@@ -2,18 +2,30 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
+import {
+  IconAutomations,
+  IconCampaigns,
+  IconCompliance,
+  IconContacts,
+  IconDashboard,
+  IconInbox,
+  IconMedia,
+  IconNumbers,
+  IconSegments,
+  IconSettings,
+} from "@/components/nav-icons";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/campaigns", label: "Campaigns", icon: "📣" },
-  { href: "/automations", label: "Automations", icon: "⚡" },
-  { href: "/inbox", label: "Inbox", icon: "💬" },
-  { href: "/contacts", label: "Contacts", icon: "👥" },
-  { href: "/audiences", label: "Segments & DNC", icon: "🎯" },
-  { href: "/media", label: "Media & Templates", icon: "🖼️" },
-  { href: "/numbers", label: "Numbers", icon: "📞" },
-  { href: "/compliance", label: "Compliance", icon: "✅" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/dashboard", label: "Dashboard", Icon: IconDashboard },
+  { href: "/campaigns", label: "Campaigns", Icon: IconCampaigns },
+  { href: "/automations", label: "Automations", Icon: IconAutomations },
+  { href: "/inbox", label: "Inbox", Icon: IconInbox },
+  { href: "/contacts", label: "Contacts", Icon: IconContacts },
+  { href: "/audiences", label: "Segments & DNC", Icon: IconSegments },
+  { href: "/media", label: "Media & Templates", Icon: IconMedia },
+  { href: "/numbers", label: "Numbers", Icon: IconNumbers },
+  { href: "/compliance", label: "Compliance", Icon: IconCompliance },
+  { href: "/settings", label: "Settings", Icon: IconSettings },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -27,14 +39,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/puff-ping-logo.png" alt="PuffPing" className="h-11 w-auto mix-blend-multiply" />
         </Link>
-        {NAV.map((item) => (
+        {NAV.map(({ href, label, Icon }) => (
           <Link
-            key={item.href}
-            href={item.href}
-            className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-bold text-zinc-300 hover:bg-emerald-900 hover:text-emerald-800 transition-colors"
+            key={href}
+            href={href}
+            className="group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-bold text-zinc-300 hover:bg-emerald-900 hover:text-emerald-800 transition-colors"
           >
-            <span aria-hidden>{item.icon}</span>
-            {item.label}
+            <Icon className="shrink-0 text-emerald-700 transition-colors group-hover:text-emerald-800" />
+            {label}
           </Link>
         ))}
         <div className="mt-auto border-t-2 border-[color:var(--color-zinc-700)] pt-3">
