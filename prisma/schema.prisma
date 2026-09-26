@@ -219,6 +219,7 @@ model Campaign {
   completedAt DateTime?
   segmentId   String? // when set, audience comes from this segment instead of lists
   enqueuedAt  DateTime? // set once every recipient row is queued; the worker only finalizes after this
+  failureReason String? // user-facing reason when status = failed (e.g. no sending number)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentTenantId } from "@/lib/tenant";
+import { NO_SENDING_NUMBER, sendingNumberStatus } from "@/lib/send";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -94,6 +95,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const when = new Date(body.scheduledAt);
     if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
       return NextResponse.json({ error: "scheduledAt must be a future time" }, { status: 400 });
+    }
+    const sending = await sendingNumberStatus(tenantId);
+    if (!sending.canSend) {
+      return NextResponse.json({ error: sending.reason, code: NO_SENDING_NUMBER }, { status: 409 });
     }
     const { count } = await db.campaign.updateMany({
       where: EDITABLE,

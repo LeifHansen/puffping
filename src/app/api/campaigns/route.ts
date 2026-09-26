@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentTenantId } from "@/lib/tenant";
+import { NO_SENDING_NUMBER, sendingNumberStatus } from "@/lib/send";
 
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
@@ -76,6 +77,10 @@ export async function POST(req: NextRequest) {
     scheduledAt = new Date(body.scheduledAt);
     if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
       return NextResponse.json({ error: "scheduledAt must be a future time" }, { status: 400 });
+    }
+    const sending = await sendingNumberStatus(tenantId);
+    if (!sending.canSend) {
+      return NextResponse.json({ error: sending.reason, code: NO_SENDING_NUMBER }, { status: 409 });
     }
   }
 

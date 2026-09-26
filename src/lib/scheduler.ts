@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { queueCampaign, resumePendingSends, sendDirectMessage } from "./send";
+import { NoSendingNumberError, queueCampaign, resumePendingSends, sendDirectMessage } from "./send";
 import { renderTemplate } from "./render";
 
 /**
@@ -22,6 +22,8 @@ const TICK_MS = 30_000;
 const ENROLLMENT_BATCH = 200;
 // A leased drip step is retried after this if its machine dies mid-send.
 const ENROLLMENT_LEASE_MS = 5 * 60_000;
+// A drip step whose workspace has no sending number waits this long, then retries.
+const NO_NUMBER_RETRY_MS = 60 * 60_000;
 
 const g = globalThis as unknown as {
   __puffpingScheduler?: ReturnType<typeof setInterval>;
@@ -58,14 +60,16 @@ async function launchDueCampaigns() {
     // Claim atomically so a concurrent tick can't double-launch.
     const claim = await db.campaign.updateMany({
       where: { id: c.id, status: "scheduled" },
-      data: { status: "sending", startedAt: new Date(), enqueuedAt: null },
+      data: { status: "sending", startedAt: new Date(), enqueuedAt: null, failureReason: null },
     });
     if (claim.count === 0) continue;
     try {
       await queueCampaign(c.id);
     } catch (err) {
       // Rows already queued still send; a retry only queues the rest.
-      await db.campaign.update({ where: { id: c.id }, data: { status: "failed" } });
+      const failureReason =
+        err instanceof NoSendingNumberError ? err.message : "The scheduled send couldn't start — use Send now to retry.";
+      await db.campaign.update({ where: { id: c.id }, data: { status: "failed", failureReason } });
       console.error(`[puffping] scheduled campaign ${c.id} failed to launch:`, err);
     }
   }
@@ -122,6 +126,15 @@ async function processDueEnrollments() {
         });
       }
     } catch (err) {
+      if (err instanceof NoSendingNumberError) {
+        // Don't burn the step: hold it (same step) and retry later, so the drip
+        // resumes once the workspace has a number again.
+        await db.automationEnrollment.update({
+          where: { id: e.id },
+          data: { nextRunAt: new Date(Date.now() + NO_NUMBER_RETRY_MS) },
+        });
+        continue;
+      }
       // Log and still advance so one bad step doesn't wedge the enrollment.
       console.error(`[puffping] automation step send failed (enrollment ${e.id}):`, err);
     }
