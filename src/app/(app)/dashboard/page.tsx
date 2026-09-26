@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Last 30 days of sending, delivery, and engagement" />
+      <PageHeader title="Dashboard" subtitle="All-time sending, delivery, and engagement · chart shows the last 30 days" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {tiles.map((tile) => (

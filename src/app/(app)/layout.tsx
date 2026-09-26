@@ -43,9 +43,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link
             key={href}
             href={href}
-            className="group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-bold text-zinc-300 hover:bg-emerald-900 hover:text-emerald-800 transition-colors"
+            className="group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-bold text-zinc-300 hover:bg-emerald-900 hover:text-emerald-700 transition-colors"
           >
-            <Icon className="shrink-0 text-emerald-700 transition-colors group-hover:text-emerald-800" />
+            <Icon className="shrink-0 text-emerald-700 transition-colors group-hover:text-emerald-600" />
             {label}
           </Link>
         ))}

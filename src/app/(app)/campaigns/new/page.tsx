@@ -7,7 +7,12 @@ import { Button, Card, Input, Label, PageHeader, Select, TextArea } from "@/comp
 type List = { id: string; name: string; _count: { memberships: number } };
 type Template = { id: string; name: string; body: string; mediaUrl: string | null };
 type Segment = { id: string; name: string; count: number };
-type Preview = { audience: number; rendered: string; segments: { segments: number; encoding: string; chars: number } };
+type Preview = {
+  audience: number;
+  rendered: string;
+  segments: { segments: number; encoding: string; chars: number };
+  source: string; // the draft body this preview was rendered from
+};
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -33,19 +38,29 @@ export default function NewCampaignPage() {
   }, []);
 
   useEffect(() => {
+    // Abort superseded requests so an older response can't land last.
+    if (!body) {
+      setPreview(null);
+      return;
+    }
+    const controller = new AbortController();
     const t = setTimeout(async () => {
-      if (!body) {
-        setPreview(null);
-        return;
+      try {
+        const res = await fetch("/api/campaigns/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body, listIds: segmentId ? [] : selectedLists, segmentId: segmentId || null }),
+          signal: controller.signal,
+        });
+        if (res.ok) setPreview({ ...(await res.json()), source: body });
+      } catch {
+        // aborted or offline — the raw body still renders as the preview
       }
-      const res = await fetch("/api/campaigns/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, listIds: segmentId ? [] : selectedLists, segmentId: segmentId || null }),
-      });
-      if (res.ok) setPreview(await res.json());
     }, 400);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [body, selectedLists, segmentId]);
 
   function toggleList(id: string) {
@@ -112,9 +127,11 @@ export default function NewCampaignPage() {
     if (mode === "now") {
       const sendRes = await fetch(`/api/campaigns/${data.campaign.id}/send`, { method: "POST" });
       if (!sendRes.ok) {
-        const sendData = await sendRes.json();
-        setSaving(false);
-        setError(`Campaign saved as draft, but sending failed: ${sendData.error}`);
+        // The campaign is already saved — hand off to the list (which has its
+        // own "Send now") instead of letting a retry here create a duplicate.
+        const sendData = await sendRes.json().catch(() => ({}));
+        const msg = `"${name}" was saved, but sending failed: ${sendData.error ?? `HTTP ${sendRes.status}`}`;
+        router.push(`/campaigns?sendError=${encodeURIComponent(msg)}`);
         return;
       }
     }
@@ -250,7 +267,7 @@ export default function NewCampaignPage() {
                 <img src={mediaUrl} alt="MMS media" className="mb-2 max-h-40 rounded-lg object-cover" />
               )}
               <p className="whitespace-pre-wrap text-sm">
-                {preview?.rendered || body || "Your message will appear here…"}
+                {(preview?.source === body && preview.rendered) || body || "Your message will appear here…"}
               </p>
             </div>
             {preview && (

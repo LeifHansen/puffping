@@ -34,7 +34,7 @@ export default function MediaPage() {
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
               tab === t
-                ? "border-emerald-500 text-white"
+                ? "border-emerald-500 text-zinc-100"
                 : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -52,6 +52,7 @@ function Library() {
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeIsError, setNoticeIsError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -67,23 +68,34 @@ function Library() {
     setNotice(null);
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch("/api/media", { method: "POST", body: form });
-    const data = await res.json();
-    setUploading(false);
-    if (!res.ok) setNotice(data.error);
+    try {
+      const res = await fetch("/api/media", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice(data.error ?? `Upload failed (HTTP ${res.status})`);
+        setNoticeIsError(true);
+      }
+    } catch {
+      setNotice("Upload failed — check your connection and try again.");
+      setNoticeIsError(true);
+    } finally {
+      setUploading(false);
+    }
     load();
   }
 
   async function optimize(a: Asset) {
     setBusyId(a.id);
     setNotice(null);
-    const res = await fetch(`/api/media/${a.id}/optimize`, { method: "POST" });
-    const data = await res.json();
+    const res = await fetch(`/api/media/${a.id}/optimize`, { method: "POST" }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
     setBusyId(null);
-    if (!res.ok) {
-      setNotice(data.error);
+    if (!res?.ok) {
+      setNotice(data?.error ?? "Optimization failed — try again.");
+      setNoticeIsError(true);
       return;
     }
+    setNoticeIsError(false);
     const parts = [`Optimized → ${kb(data.asset.sizeBytes)}`];
     if (data.savedBytes > 0) parts.push(`saved ${kb(data.savedBytes)}`);
     parts.push(data.aiUsed ? "AI-assisted" : "AI not configured — default optimization");
@@ -117,7 +129,9 @@ function Library() {
           }}
         />
       </div>
-      {notice && <p className="mb-3 text-sm text-emerald-300">{notice}</p>}
+      {notice && (
+        <p className={`mb-3 text-sm font-bold ${noticeIsError ? "text-red-400" : "text-emerald-300"}`}>{notice}</p>
+      )}
 
       {assets.length === 0 ? (
         <EmptyState title="No media yet" hint="Upload an image or video to use in MMS campaigns." />
@@ -128,7 +142,7 @@ function Library() {
               <div className="flex aspect-video items-center justify-center overflow-hidden bg-zinc-950">
                 {a.kind === "image" ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={a.url} alt={a.altText ?? a.filename} className="h-full w-full object-contain" />
+                  <img src={a.url} alt={a.altText ?? a.filename} loading="lazy" decoding="async" className="h-full w-full object-contain" />
                 ) : (
                   <video src={a.url} className="h-full w-full object-contain" controls preload="metadata" />
                 )}
@@ -138,7 +152,7 @@ function Library() {
                   <p className="truncate text-sm font-medium" title={a.filename}>
                     {a.filename}
                   </p>
-                  {a.optimizedForMobile && <Badge status="delivered" />}
+                  {a.optimizedForMobile && <Badge status="optimized" />}
                 </div>
                 <p className="mt-0.5 text-xs text-zinc-500">
                   {a.kind} · {kb(a.sizeBytes)}
@@ -317,7 +331,7 @@ function Templates() {
                       className="overflow-hidden rounded-md border border-zinc-700 hover:border-emerald-500"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.url} alt={img.filename} className="aspect-square w-full object-cover" />
+                      <img src={img.url} alt={img.filename} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
                     </button>
                   ))}
                 </div>

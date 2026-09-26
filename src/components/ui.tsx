@@ -96,6 +96,9 @@ const BADGE_COLORS: Record<string, string> = {
   submitted: "bg-sky-900 text-sky-300 border-sky-800",
   in_review: "bg-amber-900 text-amber-300 border-amber-800",
   rejected: "bg-red-900 text-red-300 border-red-800",
+  subscribed: "bg-emerald-900 text-emerald-300 border-emerald-800",
+  opted_out: "bg-red-900 text-red-300 border-red-800",
+  optimized: "bg-emerald-900 text-emerald-300 border-emerald-800",
 };
 
 export function Badge({ status }: { status: string }) {

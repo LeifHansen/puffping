@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
 
 type Campaign = {
@@ -18,46 +18,66 @@ type Campaign = {
 };
 
 export default function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const router = useRouter();
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/campaigns").then((r) => r.json());
-    setCampaigns(res.campaigns ?? []);
+    try {
+      const res = await fetch("/api/campaigns").then((r) => r.json());
+      setCampaigns(res.campaigns ?? []);
+    } catch {
+      setCampaigns([]);
+      setError("Couldn't load campaigns — refresh to try again.");
+    }
   }, []);
 
   useEffect(() => {
     load();
+    // Error handed off from "Save & send now" on the new-campaign page.
+    const sendError = new URLSearchParams(window.location.search).get("sendError");
+    if (sendError) {
+      setError(sendError);
+      window.history.replaceState(null, "", "/campaigns");
+    }
   }, [load]);
 
-  async function send(c: Campaign) {
-    if (!confirm(`Send "${c.name}" now?`)) return;
+  /** Run a campaign action, surfacing API errors instead of failing silently. */
+  async function act(c: Campaign, url: string, init: RequestInit) {
     setBusy(c.id);
     setError(null);
-    const res = await fetch(`/api/campaigns/${c.id}/send`, { method: "POST" });
-    const data = await res.json();
-    setBusy(null);
-    if (!res.ok) setError(data.error);
-    load();
+    try {
+      const res = await fetch(url, init);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `Request failed (HTTP ${res.status})`);
+      }
+    } catch {
+      setError("Request failed — check your connection and try again.");
+    } finally {
+      setBusy(null);
+      load();
+    }
   }
 
-  async function cancelSchedule(c: Campaign) {
+  function send(c: Campaign) {
+    if (!confirm(`Send "${c.name}" now?`)) return;
+    return act(c, `/api/campaigns/${c.id}/send`, { method: "POST" });
+  }
+
+  function cancelSchedule(c: Campaign) {
     if (!confirm(`Cancel the scheduled send for "${c.name}"? It reverts to a draft.`)) return;
-    setBusy(c.id);
-    await fetch(`/api/campaigns/${c.id}`, {
+    return act(c, `/api/campaigns/${c.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "cancel" }),
     });
-    setBusy(null);
-    load();
   }
 
-  async function remove(c: Campaign) {
+  function remove(c: Campaign) {
     if (!confirm(`Delete campaign "${c.name}"?`)) return;
-    await fetch(`/api/campaigns/${c.id}`, { method: "DELETE" });
-    load();
+    return act(c, `/api/campaigns/${c.id}`, { method: "DELETE" });
   }
 
   return (
@@ -65,15 +85,13 @@ export default function CampaignsPage() {
       <PageHeader
         title="Campaigns"
         subtitle="Mass SMS/MMS sends with delivery tracking"
-        actions={
-          <Link href="/campaigns/new">
-            <Button>+ New campaign</Button>
-          </Link>
-        }
+        actions={<Button onClick={() => router.push("/campaigns/new")}>+ New campaign</Button>}
       />
-      {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+      {error && <p className="mb-3 text-sm font-bold text-red-400">{error}</p>}
 
-      {campaigns.length === 0 ? (
+      {campaigns === null ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : campaigns.length === 0 ? (
         <EmptyState title="No campaigns yet" hint="Create a campaign to send your first blast." />
       ) : (
         <div className="space-y-3">
@@ -112,7 +130,7 @@ export default function CampaignsPage() {
                         Cancel
                       </Button>
                     )}
-                    <Button variant="ghost" onClick={() => remove(c)}>
+                    <Button variant="ghost" onClick={() => remove(c)} disabled={busy === c.id}>
                       Delete
                     </Button>
                   </div>

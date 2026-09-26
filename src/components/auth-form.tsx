@@ -20,11 +20,11 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(mode === "signup" ? { email, password, workspaceName } : { email, password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    if (!res?.ok) {
       setBusy(false);
-      setError(data.error ?? "Something went wrong");
+      setError(data?.error ?? (res ? "Something went wrong" : "Network error — check your connection and try again."));
       return;
     }
     router.push("/dashboard");

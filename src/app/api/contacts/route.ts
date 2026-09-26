@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") ?? "";
   const listId = searchParams.get("listId");
-  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const pageSize = Math.min(200, Number(searchParams.get("pageSize") ?? 50));
+  // Clamp: NaN would 500 in Prisma, and a negative `take` silently pages backwards.
+  const page = Math.max(1, Math.floor(Number(searchParams.get("page")) || 1));
+  const pageSize = Math.min(200, Math.max(1, Math.floor(Number(searchParams.get("pageSize")) || 50)));
 
   const where = {
     tenantId,

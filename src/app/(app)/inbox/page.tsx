@@ -36,8 +36,11 @@ export default function InboxPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // The thread currently on screen — responses for any other id are stale.
+  const activeIdRef = useRef<string | null>(null);
 
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/inbox").then((r) => r.json());
@@ -46,7 +49,7 @@ export default function InboxPage() {
 
   const loadThread = useCallback(async (id: string) => {
     const res = await fetch(`/api/inbox/${id}`).then((r) => r.json());
-    setMessages(res.messages ?? []);
+    if (activeIdRef.current === id) setMessages(res.messages ?? []);
   }, []);
 
   useEffect(() => {
@@ -56,6 +59,9 @@ export default function InboxPage() {
   }, [loadConversations]);
 
   useEffect(() => {
+    activeIdRef.current = activeId;
+    setMessages([]);
+    setError(null);
     if (!activeId) return;
     loadThread(activeId);
     const interval = setInterval(() => loadThread(activeId), 10000);
@@ -67,20 +73,29 @@ export default function InboxPage() {
   }, [messages.length]);
 
   async function sendReply() {
-    if (!activeId || !reply.trim()) return;
+    // Guard against double-sends (Enter + click, key repeat) — each is a real SMS.
+    if (!activeId || !reply.trim() || sending) return;
+    const id = activeId;
+    setSending(true);
     setError(null);
-    const res = await fetch(`/api/inbox/${activeId}/reply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: reply }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error);
-      return;
+    try {
+      const res = await fetch(`/api/inbox/${id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: reply }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? `Send failed (HTTP ${res.status})`);
+        return;
+      }
+      setReply("");
+      loadThread(id);
+    } catch {
+      setError("Send failed — check your connection and try again.");
+    } finally {
+      setSending(false);
     }
-    setReply("");
-    loadThread(activeId);
   }
 
   const active = conversations.find((c) => c.id === activeId);
@@ -159,10 +174,13 @@ export default function InboxPage() {
                 <Input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendReply()}
+                  onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && sendReply()}
                   placeholder="Type a reply…"
+                  disabled={sending}
                 />
-                <Button onClick={sendReply}>Send</Button>
+                <Button onClick={sendReply} disabled={sending || !reply.trim()}>
+                  {sending ? "Sending…" : "Send"}
+                </Button>
               </div>
             </>
           )}
