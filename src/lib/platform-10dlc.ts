@@ -85,18 +85,29 @@ export async function syncSendingPool(tenantId?: string): Promise<PoolSyncResult
   });
 
   const result: PoolSyncResult = { total: numbers.length, pooled: 0, attached: 0, failed: [] };
+  const errors = new Map<string, string>();
   for (const n of numbers) {
-    let pooled = inPool.has(n.twilioSid);
-    if (!pooled) {
-      try {
-        await service.phoneNumbers.create({ phoneNumberSid: n.twilioSid });
-        pooled = true;
-        result.attached++;
-      } catch (err) {
-        result.failed.push({ phoneNumber: n.phoneNumber, error: err instanceof Error ? err.message : String(err) });
-      }
+    if (inPool.has(n.twilioSid)) continue;
+    try {
+      await service.phoneNumbers.create({ phoneNumberSid: n.twilioSid });
+      inPool.add(n.twilioSid);
+      result.attached++;
+    } catch (err) {
+      errors.set(n.twilioSid, err instanceof Error ? err.message : String(err));
     }
+  }
+  // A failed attach may just mean another machine attached it first (e.g. two
+  // machines syncing on boot) — trust the pool's actual membership, not the error.
+  if (errors.size) {
+    for (const p of await service.phoneNumbers.list()) {
+      if (errors.delete(p.sid)) inPool.add(p.sid);
+    }
+  }
+
+  for (const n of numbers) {
+    const pooled = inPool.has(n.twilioSid);
     if (pooled) result.pooled++;
+    else result.failed.push({ phoneNumber: n.phoneNumber, error: errors.get(n.twilioSid) ?? "Not in the sending pool" });
     if (pooled !== n.inMessagingService) {
       await db.phoneNumber.update({ where: { id: n.id }, data: { inMessagingService: pooled } });
     }
