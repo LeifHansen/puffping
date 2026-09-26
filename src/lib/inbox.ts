@@ -40,7 +40,7 @@ export async function recordInboundMessage(opts: {
   if (OPT_OUT_KEYWORDS.includes(keyword)) {
     await addSuppression(tenantId, from, "opt_out");
   } else if (OPT_IN_KEYWORDS.includes(keyword)) {
-    await removeSuppression(tenantId, from);
+    await removeSuppression(tenantId, from, "opt_out");
   }
 
   const conversation = await db.conversation.upsert({

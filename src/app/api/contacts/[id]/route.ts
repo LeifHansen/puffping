@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
 import { currentTenantId } from "@/lib/tenant";
-import { addSuppression, removeSuppression } from "@/lib/suppression";
+import { addSuppression, isSuppressed, removeSuppression } from "@/lib/suppression";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,6 +18,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (body.phone !== undefined) {
     const phone = normalizePhone(body.phone);
     if (!phone) return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
+    if (phone !== existing.phone) {
+      const taken = await db.contact.findUnique({ where: { tenantId_phone: { tenantId, phone } }, select: { id: true } });
+      if (taken) return NextResponse.json({ error: "Another contact already has that phone number" }, { status: 409 });
+      // Moving onto a DNC'd number must not make it sendable.
+      if (await isSuppressed(tenantId, phone)) {
+        data.optedOut = true;
+        data.optedOutAt = new Date();
+      }
+    }
     data.phone = phone;
   }
   for (const key of ["firstName", "lastName", "email"] as const) {

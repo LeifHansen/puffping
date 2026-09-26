@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { queueCampaign, sendDirectMessage } from "./send";
+import { queueCampaign, resumePendingSends, sendDirectMessage } from "./send";
 import { renderTemplate } from "./render";
 
 /**
@@ -10,14 +10,18 @@ import { renderTemplate } from "./render";
  *  2. Advances automation drip enrollments whose `nextRunAt` is due, sending
  *     the current step and scheduling the next.
  *
+ *  3. Requeues send-queue rows orphaned by a dead worker (stale claims).
+ *
  * A reentrancy guard prevents overlapping ticks within a process; the singleton
  * interval prevents multiple schedulers per process. Cross-machine safety comes
- * from the atomic status-conditioned claims below (campaign launch) — only one
- * machine wins each claim.
+ * from atomic conditional claims — a status-conditioned claim per campaign
+ * launch and a nextRunAt lease per drip step — so only one machine wins each.
  */
 
 const TICK_MS = 30_000;
 const ENROLLMENT_BATCH = 200;
+// A leased drip step is retried after this if its machine dies mid-send.
+const ENROLLMENT_LEASE_MS = 5 * 60_000;
 
 const g = globalThis as unknown as {
   __puffpingScheduler?: ReturnType<typeof setInterval>;
@@ -36,6 +40,7 @@ async function tick() {
   try {
     await launchDueCampaigns();
     await processDueEnrollments();
+    await resumePendingSends();
   } catch (err) {
     console.error("[puffping] scheduler tick failed:", err);
   } finally {
@@ -53,19 +58,14 @@ async function launchDueCampaigns() {
     // Claim atomically so a concurrent tick can't double-launch.
     const claim = await db.campaign.updateMany({
       where: { id: c.id, status: "scheduled" },
-      data: { status: "sending", startedAt: new Date() },
+      data: { status: "sending", startedAt: new Date(), enqueuedAt: null },
     });
     if (claim.count === 0) continue;
     try {
       await queueCampaign(c.id);
     } catch (err) {
-      await db.campaign.update({
-        where: { id: c.id },
-        data: {
-          status: "failed",
-          // reuse startedAt; no dedicated error column on Campaign
-        },
-      });
+      // Rows already queued still send; a retry only queues the rest.
+      await db.campaign.update({ where: { id: c.id }, data: { status: "failed" } });
       console.error(`[puffping] scheduled campaign ${c.id} failed to launch:`, err);
     }
   }
@@ -92,6 +92,14 @@ async function processDueEnrollments() {
       });
       continue;
     }
+
+    // Lease the step before sending: only the tick (on any machine) whose
+    // conditional update wins may send it — the rest see count 0 and skip.
+    const lease = await db.automationEnrollment.updateMany({
+      where: { id: e.id, status: "active", currentStep: e.currentStep, nextRunAt: e.nextRunAt },
+      data: { nextRunAt: new Date(Date.now() + ENROLLMENT_LEASE_MS) },
+    });
+    if (lease.count === 0) continue;
 
     const step = e.automation.steps[e.currentStep];
     if (!step) {

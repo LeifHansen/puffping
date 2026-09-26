@@ -188,6 +188,8 @@ model ListMembership {
   list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
 
   @@id([contactId, listId])
+  // The PK leads with contactId; list audiences, counts, and cascades filter by listId.
+  @@index([listId])
 }
 
 model Template {
@@ -216,6 +218,7 @@ model Campaign {
   startedAt   DateTime?
   completedAt DateTime?
   segmentId   String? // when set, audience comes from this segment instead of lists
+  enqueuedAt  DateTime? // set once every recipient row is queued; the worker only finalizes after this
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -267,6 +270,9 @@ model Message {
   @@index([tenantId, status])
   @@index([campaignId, status])
   @@index([tenantId, phone])
+  @@index([tenantId, createdAt]) // dashboard series + monthly usage
+  @@index([contactId]) // "replied" segments, contact delete
+  @@index([conversationId]) // inbox thread view
   @@index([createdAt])
   // Send-worker hot path: WHERE status='pending' AND direction ORDER BY createdAt
   @@index([status, createdAt])
@@ -551,5 +557,6 @@ model AutomationEnrollment {
 
   @@unique([automationId, contactId])
   @@index([status, nextRunAt])
+  @@index([contactId])
   @@index([tenantId])
 }

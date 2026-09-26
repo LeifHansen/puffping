@@ -3,6 +3,7 @@ import { renderTemplate, segmentCount } from "./render";
 import { appBaseUrl, messagingServiceSid, twilio } from "./twilio";
 import { buildLinkMap, rewriteLinks } from "./links";
 import { parseDefinition, segmentWhere } from "./segments";
+import { addSuppression } from "./suppression";
 import { Prisma } from "@prisma/client";
 
 /**
@@ -21,8 +22,17 @@ const ENQUEUE_BATCH = 1000; // contacts fetched/rendered per DB round-trip
 const SEND_CONCURRENCY = 25; // concurrent Twilio API calls
 const CLAIM_BATCH = 250; // pending rows claimed per worker cycle
 const MAX_ATTEMPTS = 3;
+// A `sending` row older than this with no Twilio SID belongs to a dead worker.
+// Well above the worst-case time to drain one claimed batch.
+const STALE_CLAIM_MS = 5 * 60_000;
+// Twilio: "Attempt to send to unsubscribed recipient" (STOP'd on the service).
+const TWILIO_UNSUBSCRIBED = 21610;
 
-/** Enqueue a campaign. Fast even for 100k contacts; returns the queued count. */
+/**
+ * Enqueue a campaign. Fast even for 100k contacts; returns the queued count.
+ * Idempotent: contacts that already have a message for this campaign are
+ * skipped, so re-sending a campaign that failed mid-enqueue never double-texts.
+ */
 export async function queueCampaign(campaignId: string): Promise<{ queued: number }> {
   const campaign = await db.campaign.findUniqueOrThrow({
     where: { id: campaignId },
@@ -48,11 +58,15 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   const linkMap = await buildLinkMap({ tenantId, campaignId: campaign.id, body: campaign.body });
 
   for (;;) {
+    // Keyset pagination via `id > cursor` — not Prisma's cursor+skip, which is
+    // an OFFSET over the *filtered* rows: once the previous batch is messaged
+    // it drops out of the filter and `skip: 1` would silently skip a recipient.
     const contacts = await db.contact.findMany({
-      where: audienceWhere,
+      where: {
+        AND: [audienceWhere, { messages: { none: { campaignId: campaign.id } } }, cursor ? { id: { gt: cursor } } : {}],
+      },
       orderBy: { id: "asc" },
       take: ENQUEUE_BATCH,
-      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     });
     if (!contacts.length) break;
     cursor = contacts[contacts.length - 1].id;
@@ -84,14 +98,10 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
     if (contacts.length < ENQUEUE_BATCH) break;
   }
 
-  if (queued === 0) {
-    await db.campaign.update({
-      where: { id: campaignId },
-      data: { status: "sent", completedAt: new Date() },
-    });
-  } else {
-    ensureSendWorker();
-  }
+  // Mark enqueueing done — only then may the worker finalize the campaign
+  // (before this, an empty queue just means rows haven't been inserted yet).
+  await db.campaign.update({ where: { id: campaignId }, data: { enqueuedAt: new Date() } });
+  ensureSendWorker(); // also finalizes a campaign with nothing (left) to send
   return { queued };
 }
 
@@ -131,8 +141,10 @@ async function workerLoop() {
     // ATOMIC claim: only rows still `pending` flip to `sending`, and only the
     // rows we actually claimed get sent. Prevents double-texting when multiple
     // workers run (multi-machine deploy, boot resume racing an active worker).
+    // `updatedAt` stamps the claim so recoverStaleClaims can tell a dead
+    // worker's rows from ones a live machine is sending right now.
     const claimedRows = await db.$queryRaw<{ id: string }[]>`
-      UPDATE "Message" SET status = 'sending'
+      UPDATE "Message" SET status = 'sending', "updatedAt" = now()
       WHERE id IN (${Prisma.join(candidates.map((m) => m.id))}) AND status = 'pending'
       RETURNING id
     `;
@@ -162,7 +174,7 @@ async function workerLoop() {
             });
             break;
           } catch (err) {
-            const status = (err as { status?: number }).status;
+            const { status, code } = err as { status?: number; code?: number };
             if (status === 429 && attempt < MAX_ATTEMPTS) {
               await sleep(1000 * 2 ** attempt);
               continue;
@@ -171,10 +183,11 @@ async function workerLoop() {
               where: { id: msg.id },
               data: {
                 status: "failed",
-                errorCode: status ? String(status) : null,
+                errorCode: code ? String(code) : status ? String(status) : null,
                 errorMessage: err instanceof Error ? err.message : String(err),
               },
             });
+            await suppressIfUnsubscribed(err, msg.tenantId, msg.phone);
             break;
           }
         }
@@ -186,20 +199,33 @@ async function workerLoop() {
   await finalizeCompletedCampaigns();
 }
 
-/** Mark campaigns whose queue has fully drained as sent. */
+/**
+ * Mark fully-enqueued campaigns whose queue has drained as sent, in one
+ * statement. The startedAt fallback finalizes campaigns from before
+ * `enqueuedAt` existed, or whose enqueue died mid-way, instead of leaving them
+ * "sending" forever.
+ */
 async function finalizeCompletedCampaigns() {
-  const sending = await db.campaign.findMany({ where: { status: "sending" }, select: { id: true } });
-  for (const c of sending) {
-    const remaining = await db.message.count({
-      where: { campaignId: c.id, status: { in: ["pending", "sending"] } },
-    });
-    if (remaining === 0) {
-      await db.campaign.update({
-        where: { id: c.id },
-        data: { status: "sent", completedAt: new Date() },
-      });
-    }
-  }
+  await db.$executeRaw`
+    UPDATE "Campaign" c SET status = 'sent', "completedAt" = now(), "updatedAt" = now()
+    WHERE c.status = 'sending'
+      AND (c."enqueuedAt" IS NOT NULL OR c."startedAt" < now() - interval '1 hour')
+      AND NOT EXISTS (
+        SELECT 1 FROM "Message" m WHERE m."campaignId" = c.id AND m.status IN ('pending', 'sending')
+      )
+  `;
+}
+
+/**
+ * Twilio refuses sends to a number that texted STOP on the (shared) Messaging
+ * Service. Mirror that into this workspace's suppression list so its audiences
+ * and UI reflect the opt-out, even if the STOP went to another number.
+ */
+async function suppressIfUnsubscribed(err: unknown, tenantId: string, phone: string) {
+  if ((err as { code?: number }).code !== TWILIO_UNSUBSCRIBED) return;
+  await addSuppression(tenantId, phone, "opt_out").catch((e) =>
+    console.error("[puffping] couldn't record Twilio opt-out:", e)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -270,15 +296,27 @@ export function pickSender(numbers: string[], to: string): string | undefined {
   return numbers[(hash >>> 0) % numbers.length];
 }
 
-/** Called from instrumentation on boot: resume any interrupted sends. */
+/**
+ * Requeue rows a dead worker claimed but never handed to Twilio, and make sure
+ * the worker runs if anything is pending. Only STALE claims are touched —
+ * another live machine may be mid-batch, and requeueing its fresh claims would
+ * double-text those recipients. Called on boot and every scheduler tick.
+ */
 export async function resumePendingSends() {
-  // Rows stuck in `sending` from a crashed process go back to `pending`
   await db.message.updateMany({
-    where: { status: "sending", direction: "outbound", twilioSid: null },
+    where: {
+      status: "sending",
+      direction: "outbound",
+      twilioSid: null,
+      updatedAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) },
+    },
     data: { status: "pending" },
   });
-  const pendingCount = await db.message.count({ where: { status: "pending", direction: "outbound" } });
-  if (pendingCount > 0) ensureSendWorker();
+  const pending = await db.message.findFirst({
+    where: { status: "pending", direction: "outbound" },
+    select: { id: true },
+  });
+  if (pending) ensureSendWorker();
 }
 
 /** Send a single ad-hoc message (inbox replies, test sends). */
@@ -291,14 +329,19 @@ export async function sendDirectMessage(opts: {
   contactId?: string;
 }): Promise<string> {
   const client = twilio();
-  const msg = await client.messages.create({
-    to: opts.to,
-    messagingServiceSid: messagingServiceSid(),
-    from: pickSender(await tenantSenders(opts.tenantId), opts.to),
-    body: opts.body,
-    mediaUrl: opts.mediaUrls,
-    statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,
-  });
+  const msg = await client.messages
+    .create({
+      to: opts.to,
+      messagingServiceSid: messagingServiceSid(),
+      from: pickSender(await tenantSenders(opts.tenantId), opts.to),
+      body: opts.body,
+      mediaUrl: opts.mediaUrls,
+      statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,
+    })
+    .catch(async (err) => {
+      await suppressIfUnsubscribed(err, opts.tenantId, opts.to);
+      throw err;
+    });
   const record = await db.message.create({
     data: {
       tenantId: opts.tenantId,

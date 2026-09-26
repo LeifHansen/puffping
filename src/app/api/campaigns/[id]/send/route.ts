@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   // re-blasting an already-sent campaign.
   const claim = await db.campaign.updateMany({
     where: { id, tenantId, status: { in: ["draft", "scheduled", "failed"] } },
-    data: { status: "sending", startedAt: new Date() },
+    data: { status: "sending", startedAt: new Date(), enqueuedAt: null },
   });
   if (claim.count === 0) {
     return NextResponse.json(

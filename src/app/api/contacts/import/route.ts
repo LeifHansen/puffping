@@ -130,7 +130,10 @@ export async function POST(req: NextRequest) {
     // separately below, so it's intentionally omitted here).
     const fresh = chunk.filter((r) => !existingByPhone.has(r.phone));
     if (fresh.length) {
-      await db.contact.createMany({
+      // skipDuplicates: a contact created concurrently (e.g. a keyword opt-in)
+      // must not abort the whole import with a unique violation.
+      const { count } = await db.contact.createMany({
+        skipDuplicates: true,
         data: fresh.map((r) => ({
           tenantId,
           phone: r.phone,
@@ -141,7 +144,7 @@ export async function POST(req: NextRequest) {
           ...(suppressed.has(r.phone) ? { optedOut: true, optedOutAt: new Date() } : {}),
         })),
       });
-      imported += fresh.length;
+      imported += count;
     }
 
     // Update existing contacts — only fill blanks, never clobber. Batched in
@@ -184,19 +187,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Bulk list memberships for the whole chunk
-    if (targetListId) {
-      const ids = [...idByPhone.values()];
-      const already = await db.listMembership.findMany({
-        where: { listId: targetListId, contactId: { in: ids } },
-        select: { contactId: true },
+    if (targetListId && idByPhone.size) {
+      await db.listMembership.createMany({
+        skipDuplicates: true,
+        data: [...idByPhone.values()].map((contactId) => ({ contactId, listId: targetListId! })),
       });
-      const alreadySet = new Set(already.map((m) => m.contactId));
-      const newMembers = ids.filter((cid) => !alreadySet.has(cid));
-      if (newMembers.length) {
-        await db.listMembership.createMany({
-          data: newMembers.map((contactId) => ({ contactId, listId: targetListId! })),
-        });
-      }
     }
 
     // Bulk tags for the whole chunk (skip pairs that already exist).
@@ -207,15 +202,7 @@ export async function POST(req: NextRequest) {
       if (!cid) continue;
       for (const tag of r.tags) wantTags.push({ contactId: cid, tag });
     }
-    if (wantTags.length) {
-      const existingTags = await db.contactTag.findMany({
-        where: { contactId: { in: wantTags.map((w) => w.contactId) } },
-        select: { contactId: true, tag: true },
-      });
-      const have = new Set(existingTags.map((t) => `${t.contactId} ${t.tag}`));
-      const newTags = wantTags.filter((w) => !have.has(`${w.contactId} ${w.tag}`));
-      if (newTags.length) await db.contactTag.createMany({ data: newTags });
-    }
+    if (wantTags.length) await db.contactTag.createMany({ data: wantTags, skipDuplicates: true });
   }
 
   return NextResponse.json({

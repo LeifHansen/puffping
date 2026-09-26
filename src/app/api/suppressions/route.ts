@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentTenantId } from "@/lib/tenant";
-import { addSuppression, removeSuppression } from "@/lib/suppression";
+import { addSuppressions, removeSuppression } from "@/lib/suppression";
 
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
@@ -24,14 +24,7 @@ export async function POST(req: NextRequest) {
   const candidates = raw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
   if (!candidates.length) return NextResponse.json({ error: "No phone numbers provided" }, { status: 400 });
 
-  let added = 0;
-  let invalid = 0;
-  for (const p of candidates) {
-    const res = await addSuppression(tenantId, p, "manual");
-    if (res) added++;
-    else invalid++;
-  }
-  return NextResponse.json({ added, invalid });
+  return NextResponse.json(await addSuppressions(tenantId, candidates, "manual"));
 }
 
 export async function DELETE(req: NextRequest) {

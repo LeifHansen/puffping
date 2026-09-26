@@ -44,11 +44,18 @@ export async function POST(req: NextRequest) {
   const contactPhone = normalizePhone(body.contactPhone);
   if (!contactPhone) return NextResponse.json({ error: "Invalid contact phone" }, { status: 400 });
 
+  // All workspaces' numbers live on one Twilio account — never trust a
+  // client-supplied SID; it must be one of this workspace's toll-free numbers.
+  const owned = await db.phoneNumber.findFirst({
+    where: { tenantId, twilioSid: body.phoneNumberSid, numberType: "tollfree" },
+  });
+  if (!owned) return NextResponse.json({ error: "Select one of your toll-free numbers" }, { status: 400 });
+
   const verification = await db.tollFreeVerification.create({
     data: {
       tenantId,
-      phoneNumberSid: body.phoneNumberSid,
-      phoneNumber: body.phoneNumber,
+      phoneNumberSid: owned.twilioSid,
+      phoneNumber: owned.phoneNumber,
       businessName: body.businessName.trim(),
       businessWebsite: body.businessWebsite.trim(),
       addressStreet: body.addressStreet.trim(),

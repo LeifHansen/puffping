@@ -64,11 +64,13 @@ export async function POST(req: NextRequest) {
       }
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        const status = event.type.endsWith("deleted")
-          ? "canceled"
-          : (obj.status as string) === "past_due"
-            ? "past_due"
-            : "active";
+        const stripeStatus = obj.status as string;
+        const status =
+          event.type.endsWith("deleted") || ["canceled", "incomplete_expired"].includes(stripeStatus)
+            ? "canceled"
+            : ["active", "trialing"].includes(stripeStatus)
+              ? "active"
+              : "past_due"; // past_due, unpaid, incomplete, paused
         const subId = obj.id as string;
         await db.tenant.updateMany({
           where: { stripeSubscriptionId: subId },
@@ -81,7 +83,10 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (err) {
+    // Non-2xx makes Stripe retry — swallowing this would silently drop e.g. a
+    // completed checkout and leave a paying customer on the free plan.
     console.error("[puffping] stripe webhook handling failed:", err);
+    return NextResponse.json({ error: "Handler failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

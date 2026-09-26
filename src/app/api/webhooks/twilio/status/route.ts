@@ -36,18 +36,18 @@ export async function POST(req: NextRequest) {
   const sid = params.MessageSid ?? params.SmsSid;
   const status = params.MessageStatus ?? params.SmsStatus;
   if (sid && status) {
+    // One conditional write (no read-then-write race between concurrent
+    // callbacks): skip if the message already holds a higher-ranked status.
     const rank = STATUS_RANK[status] ?? 0;
-    const existing = await db.message.findUnique({ where: { twilioSid: sid }, select: { status: true } });
-    if (existing && rank >= (STATUS_RANK[existing.status] ?? 0)) {
-      await db.message.updateMany({
-        where: { twilioSid: sid },
-        data: {
-          status,
-          errorCode: params.ErrorCode || null,
-          errorMessage: params.ErrorMessage || null,
-        },
-      });
-    }
+    const higher = Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s] > rank);
+    await db.message.updateMany({
+      where: { twilioSid: sid, status: { notIn: higher } },
+      data: {
+        status,
+        errorCode: params.ErrorCode || null,
+        errorMessage: params.ErrorMessage || null,
+      },
+    });
   }
   return new NextResponse(null, { status: 204 });
 }

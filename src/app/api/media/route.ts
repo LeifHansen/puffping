@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const ext = (file.name.includes(".") ? file.name.split(".").pop()! : "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
   const storagePath = await saveBytes(bytes, ext);
   const dims = kind === "image" ? await imageDimensions(bytes) : {};
 

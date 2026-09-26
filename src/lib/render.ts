@@ -7,10 +7,12 @@ import type { Contact } from "@prisma/client";
  */
 export function renderTemplate(body: string, contact: ContactLike): string {
   const fields = contactFields(contact);
-  return body.replace(/\{\{\s*([\w.]+)\s*(?:\|\s*([^}]*?)\s*)?\}\}/g, (_m, key: string, fallback?: string) => {
+  // Keep this pattern free of adjacent overlapping quantifiers: the previous
+  // `\s*([^}]*?)\s*` backtracked cubically, so a crafted body blocked the event loop.
+  return body.replace(/\{\{\s*([\w.]+)\s*(?:\|([^}]*))?\}\}/g, (_m, key: string, fallback?: string) => {
     const value = fields[key.toLowerCase()];
     if (value !== undefined && value !== null && String(value).trim() !== "") return String(value);
-    return fallback ?? "";
+    return fallback?.trim() ?? "";
   });
 }
 

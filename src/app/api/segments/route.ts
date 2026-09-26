@@ -48,6 +48,10 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     def.listIds = owned.map((l) => l.id);
+    // Every list was foreign/deleted: an empty filter would match ALL contacts.
+    if (!def.listIds.length && !def.tags?.length && !def.engagement) {
+      return NextResponse.json({ error: "The selected lists no longer exist" }, { status: 400 });
+    }
   }
 
   let segment;
