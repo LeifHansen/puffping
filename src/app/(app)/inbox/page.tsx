@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, Input, PageHeader } from "@/components/ui";
+import { NO_SENDING_NUMBER, SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 type Conversation = {
   id: string;
@@ -38,6 +39,11 @@ export default function InboxPage() {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { status: sendingStatus, reload: reloadSending } = useSendingStatus();
+  // No number to reply from. Unknown status (null) doesn't block — the API
+  // refuses sends without a number regardless.
+  const blocked = sendingStatus?.canSend === false;
+  const blockedReason = (blocked && sendingStatus?.reason) || undefined;
   const bottomRef = useRef<HTMLDivElement>(null);
   // The thread currently on screen — responses for any other id are stale.
   const activeIdRef = useRef<string | null>(null);
@@ -74,7 +80,7 @@ export default function InboxPage() {
 
   async function sendReply() {
     // Guard against double-sends (Enter + click, key repeat) — each is a real SMS.
-    if (!activeId || !reply.trim() || sending) return;
+    if (!activeId || !reply.trim() || sending || blocked) return;
     const id = activeId;
     setSending(true);
     setError(null);
@@ -87,6 +93,7 @@ export default function InboxPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? `Send failed (HTTP ${res.status})`);
+        if (data.code === NO_SENDING_NUMBER) reloadSending();
         return;
       }
       setReply("");
@@ -169,16 +176,19 @@ export default function InboxPage() {
                 ))}
                 <div ref={bottomRef} />
               </div>
+              <SendingNumberNotice status={sendingStatus} className="mb-3" />
               {error && <p className="mb-1 text-xs text-red-400">{error}</p>}
               <div className="flex gap-2 border-t border-zinc-800 pt-3">
                 <Input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && sendReply()}
-                  placeholder="Type a reply…"
-                  disabled={sending}
+                  placeholder={blocked ? "Replies are off until this workspace has a number" : "Type a reply…"}
+                  disabled={sending || blocked}
+                  title={blockedReason}
+                  className="disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                <Button onClick={sendReply} disabled={sending || !reply.trim()}>
+                <Button onClick={sendReply} disabled={sending || blocked || !reply.trim()} title={blockedReason}>
                   {sending ? "Sending…" : "Send"}
                 </Button>
               </div>

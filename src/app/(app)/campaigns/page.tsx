@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { NO_SENDING_NUMBER, SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 type Campaign = {
   id: string;
   name: string;
   body: string;
   status: string;
+  failureReason: string | null;
   scheduledAt: string | null;
   createdAt: string;
   lists: { list: { name: string } }[];
@@ -22,6 +24,11 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { status: sendingStatus, reload: reloadSending } = useSendingStatus();
+  // No number to send from. Unknown status (null) doesn't block — the API
+  // refuses sends without a number regardless.
+  const blocked = sendingStatus?.canSend === false;
+  const blockedReason = (blocked && sendingStatus?.reason) || undefined;
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +59,7 @@ export default function CampaignsPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? `Request failed (HTTP ${res.status})`);
+        if (data.code === NO_SENDING_NUMBER) reloadSending();
       }
     } catch {
       setError("Request failed — check your connection and try again.");
@@ -87,6 +95,7 @@ export default function CampaignsPage() {
         subtitle="Mass SMS/MMS sends with delivery tracking"
         actions={<Button onClick={() => router.push("/campaigns/new")}>+ New campaign</Button>}
       />
+      <SendingNumberNotice status={sendingStatus} className="mb-4" />
       {error && <p className="mb-3 text-sm font-bold text-red-400">{error}</p>}
 
       {campaigns === null ? (
@@ -118,10 +127,13 @@ export default function CampaignsPage() {
                         ⏰ Scheduled for {new Date(c.scheduledAt).toLocaleString()}
                       </p>
                     )}
+                    {c.status === "failed" && c.failureReason && (
+                      <p className="mt-1 text-xs text-red-400">{c.failureReason}</p>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     {["draft", "scheduled", "failed"].includes(c.status) && (
-                      <Button onClick={() => send(c)} disabled={busy === c.id}>
+                      <Button onClick={() => send(c)} disabled={busy === c.id || blocked} title={blockedReason}>
                         {busy === c.id ? "Sending…" : "Send now"}
                       </Button>
                     )}

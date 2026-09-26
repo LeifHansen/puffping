@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
+import { refreshPendingTollFreeVerifications, refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { currentTenantId } from "@/lib/tenant";
 
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
+  // Show current status on the Compliance page instead of waiting for the
+  // scheduler's next poll (rows checked in the last minute are skipped).
+  if (isTwilioConfigured()) {
+    await refreshPendingTollFreeVerifications({ tenantId, staleMs: 60_000, limit: 5 }).catch(() => {});
+  }
   const verifications = await db.tollFreeVerification.findMany({
     where: { tenantId },
     orderBy: { createdAt: "desc" },

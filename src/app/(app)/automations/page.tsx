@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Card, Input, Label, PageHeader, Select, TextArea } from "@/components/ui";
+import { SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 type Step = { id: string; order: number; delayMinutes: number; body: string; mediaUrl: string | null };
 type Automation = {
@@ -33,6 +34,8 @@ export default function AutomationsPage() {
   const [steps, setSteps] = useState<DraftStep[]>([emptyStep()]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Steps due while the workspace can't send are held (retried hourly), not skipped.
+  const { status: sendingStatus } = useSendingStatus();
 
   async function load() {
     const [a, l] = await Promise.all([
@@ -114,6 +117,12 @@ export default function AutomationsPage() {
           )
         }
       />
+      <SendingNumberNotice status={sendingStatus} className="mb-4" />
+      {sendingStatus?.canSend === false && (
+        <p className="-mt-2 mb-4 text-xs text-zinc-500">
+          Automation steps that come due meanwhile are held and retried hourly — none are skipped.
+        </p>
+      )}
 
       {building && (
         <Card className="mb-5">

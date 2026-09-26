@@ -30,6 +30,7 @@ export function Button({
   type = "button",
   variant = "primary",
   disabled,
+  title,
   className = "",
 }: {
   children: ReactNode;
@@ -37,6 +38,7 @@ export function Button({
   type?: "button" | "submit";
   variant?: "primary" | "secondary" | "danger" | "ghost";
   disabled?: boolean;
+  title?: string;
   className?: string;
 }) {
   // Chunky sticker buttons: 2px outline + hard offset shadow that presses down.
@@ -52,7 +54,13 @@ export function Button({
     ghost: "border-transparent hover:bg-zinc-800 text-zinc-300 shadow-none",
   }[variant];
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${styles} ${className}`}>
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`${base} ${styles} ${className}`}
+    >
       {children}
     </button>
   );

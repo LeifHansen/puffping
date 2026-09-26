@@ -50,7 +50,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "1", title: "Get a number", body: "Buy local or toll-free numbers — they join our carrier-approved 10DLC sending pool instantly." },
+  { n: "1", title: "Get a number", body: "Buy a local number — it joins our carrier-approved 10DLC sending pool instantly. Toll-free numbers send once verified." },
   { n: "2", title: "Import", body: "Upload your contacts. Numbers are cleaned and formatted; lists organize your audience." },
   { n: "3", title: "Compose", body: "Write with dynamic fields or let AI draft it. Preview segments and audience size live." },
   { n: "4", title: "Send & track", body: "Blast at scale and watch delivery, replies, and opt-outs roll in on the dashboard." },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, Label, PageHeader, Select, TextArea } from "@/components/ui";
+import { NO_SENDING_NUMBER, SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 type List = { id: string; name: string; _count: { memberships: number } };
 type Template = { id: string; name: string; body: string; mediaUrl: string | null };
@@ -30,6 +31,11 @@ export default function NewCampaignPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
+  const { status: sendingStatus, reload: reloadSending } = useSendingStatus();
+  // No number to send from: only drafts can be saved. Unknown status (null)
+  // doesn't block — the API refuses sends without a number regardless.
+  const blocked = sendingStatus?.canSend === false;
+  const blockedReason = (blocked && sendingStatus?.reason) || undefined;
 
   useEffect(() => {
     fetch("/api/lists").then((r) => r.json()).then((d) => setLists(d.lists ?? []));
@@ -122,6 +128,8 @@ export default function NewCampaignPage() {
     if (!res.ok) {
       setSaving(false);
       setError(data.error);
+      // Lost its number since this page loaded — refresh so drafts are offered.
+      if (data.code === NO_SENDING_NUMBER) reloadSending();
       return;
     }
     if (mode === "now") {
@@ -141,6 +149,7 @@ export default function NewCampaignPage() {
   return (
     <div>
       <PageHeader title="New campaign" subtitle="Compose, personalize, preview, send" />
+      <SendingNumberNotice status={sendingStatus} className="mb-4" />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <Card>
@@ -236,26 +245,40 @@ export default function NewCampaignPage() {
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
-              className="max-w-xs"
+              disabled={blocked}
+              title={blockedReason}
+              className="max-w-xs disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <p className="mt-1 text-xs text-zinc-500">
-              Leave empty to send now or save as a draft. The scheduler fires it automatically at the
-              chosen time.
-            </p>
+            {blocked ? (
+              <p className="mt-1 text-xs font-bold text-amber-300">Can&apos;t schedule yet. {blockedReason}</p>
+            ) : (
+              <p className="mt-1 text-xs text-zinc-500">
+                Leave empty to send now or save as a draft. The scheduler fires it automatically at the
+                chosen time.
+              </p>
+            )}
           </Card>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => save("now")} disabled={saving}>
-              {saving ? "Working…" : "Save & send now"}
+            {/* Without a number, the primary action saves a draft instead of sending. */}
+            <Button onClick={() => save(blocked ? "draft" : "now")} disabled={saving}>
+              {saving ? "Working…" : blocked ? "Save draft" : "Save & send now"}
             </Button>
-            <Button variant="secondary" onClick={() => save("schedule")} disabled={saving}>
+            <Button variant="secondary" onClick={() => save("schedule")} disabled={saving || blocked} title={blockedReason}>
               Schedule
             </Button>
-            <Button variant="secondary" onClick={() => save("draft")} disabled={saving}>
-              Save as draft
-            </Button>
+            {!blocked && (
+              <Button variant="secondary" onClick={() => save("draft")} disabled={saving}>
+                Save as draft
+              </Button>
+            )}
           </div>
+          {blocked && (
+            <p className="text-xs text-zinc-500">
+              Save it as a draft now, then send it from Campaigns once this workspace has a number.
+            </p>
+          )}
         </div>
 
         <div>

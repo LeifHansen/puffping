@@ -321,13 +321,15 @@ export async function sendingNumberStatus(tenantId: string): Promise<SendingNumb
     loadTenantSenders(tenantId),
   ]);
   senderCache.set(tenantId, { numbers: Promise.resolve(senders), expiresAt: Date.now() + SENDER_CACHE_TTL_MS });
+  // Most actionable fix first: an unpooled number only needs a pool sync, which
+  // may be all it takes even when a toll-free number is also awaiting review.
   const reason = senders.length
     ? null
     : !total
       ? "Buy a phone number on the Numbers page before sending — every message goes out from one of your own numbers."
-      : !pooled
-        ? "Your numbers aren't in the sending pool yet — use Sync numbers on the Compliance page, then try again."
-        : "Toll-free numbers can't send until carrier verification is approved — verify yours on the Compliance page, or buy a local number.";
+      : pooled < total
+        ? "Your numbers aren't all in the sending pool yet — use Sync numbers on the Compliance page, then try again."
+        : "Toll-free numbers can't send until their carrier verification is approved — submit or check it on the Compliance page, or buy a local number to send right away.";
   return { total, pooled, sendable: senders.length, canSend: senders.length > 0, reason };
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, EmptyState, Input, Label, PageHeader, Select } from "@/components/ui";
+import { SendingNumberNotice, type SendingNumberStatus } from "@/components/sending-number-notice";
 
 type OwnedNumber = {
   id: string;
@@ -18,7 +19,10 @@ type AvailableNumber = {
 };
 
 export default function NumbersPage() {
-  const [owned, setOwned] = useState<OwnedNumber[]>([]);
+  // null until the first successful load — never show the "no numbers" empty state before then.
+  const [owned, setOwned] = useState<OwnedNumber[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [sending, setSending] = useState<SendingNumberStatus | null>(null);
   const [available, setAvailable] = useState<AvailableNumber[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [type, setType] = useState<"local" | "tollfree">("local");
@@ -30,8 +34,16 @@ export default function NumbersPage() {
   const [noticeIsError, setNoticeIsError] = useState(false);
 
   const loadOwned = useCallback(async () => {
-    const res = await fetch("/api/numbers").then((r) => r.json());
-    setOwned(res.numbers ?? []);
+    try {
+      const res = await fetch("/api/numbers");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setOwned(data.numbers ?? []);
+      setSending(data.sending ?? null);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -113,8 +125,10 @@ export default function NumbersPage() {
     <div>
       <PageHeader
         title="Numbers"
-        subtitle="Shop for and purchase local (10DLC) or toll-free numbers — purchased numbers join PuffPing's approved sending pool automatically"
+        subtitle="Buy local (10DLC) numbers to send right away, or toll-free numbers that send once verified — purchases join PuffPing's approved sending pool automatically"
       />
+      {/* Owns numbers but none can send yet (unpooled, or unverified toll-free). With none, the empty state explains. */}
+      {sending && sending.total > 0 && <SendingNumberNotice status={sending} className="mb-4" />}
 
       <Card className="mb-4">
         <div className="flex flex-wrap items-end gap-3">
@@ -144,6 +158,12 @@ export default function NumbersPage() {
             </Button>
           )}
         </div>
+        {type === "tollfree" && (
+          <p className="mt-3 text-xs font-bold text-amber-300">
+            Toll-free numbers can&apos;t send until their carrier verification is approved (submitted on the
+            Compliance page; review usually takes a few days). Buy a local number to start sending right away.
+          </p>
+        )}
         {notice && (
           <p className={`mt-3 text-sm font-bold ${noticeIsError ? "text-red-400" : "text-emerald-300"}`}>
             {notice}
@@ -183,8 +203,19 @@ export default function NumbersPage() {
       )}
 
       <h2 className="mb-3 text-sm font-medium text-zinc-400">Your numbers</h2>
-      {owned.length === 0 ? (
-        <EmptyState title="No numbers purchased yet" hint="Search above and buy one or several in a single click." />
+      {owned === null ? (
+        <p className="text-sm text-zinc-500">
+          {loadError ? (
+            <span className="font-bold text-red-400">Couldn&apos;t load your numbers — refresh to try again.</span>
+          ) : (
+            "Loading…"
+          )}
+        </p>
+      ) : owned.length === 0 ? (
+        <EmptyState
+          title="No numbers yet — you need one to send"
+          hint="Every message goes out from one of your own numbers, so this workspace can't send until it has one. Search above and buy one or several in a single click."
+        />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {owned.map((n) => (

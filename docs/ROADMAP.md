@@ -39,15 +39,19 @@ Living checklist for the current work stream. Update as phases land.
       `MG1dc1a3f40c323aabf6cf26770330a6da` approved; SIDs built into
       `src/lib/twilio.ts`. Sends are pinned to each workspace's own pooled
       numbers; `/compliance` shows live carrier status and can re-sync the pool.
+- [x] **A workspace must buy a number before it can send** (decided
+      2026-09-26). The shared-pool fallback is gone, so replies and STOPs can't
+      route to another workspace. Send, schedule, and inbox reply return 409
+      `NO_SENDING_NUMBER`; a scheduled campaign that fires without a number
+      fails with a `failureReason`; drip steps retry hourly instead of being
+      skipped; queued rows fail with `errorCode` `NO_SENDING_NUMBER`. Drafts
+      still work. `GET /api/numbers` reports `sending` status.
 
 **Open product decisions** (not implemented — need an owner call):
 - Plan quotas (`messageQuota`) are displayed but not enforced. With one shared
   campaign, an abusive free signup can burn Twilio spend and put the campaign
   at risk for every workspace. Enforcing today would cap every workspace at the
   free tier (1,000/mo) until Stripe is live.
-- Workspaces with no numbers send from the shared pool, so their replies can
-  route to whichever workspace owns the number Twilio picked. Option: require a
-  purchased number before sending.
 - Invites are accepted by matching email with no verification; needs email
   delivery + token-based acceptance.
 - Pricing page ($29/$99) disagrees with `PLANS` in `src/lib/billing.ts`

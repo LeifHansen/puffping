@@ -1,5 +1,6 @@
 import type { TollFreeVerification } from "@prisma/client";
 import { db } from "./db";
+import { invalidateSenderCache } from "./send";
 import { twilio } from "./twilio";
 
 /**
@@ -59,7 +60,7 @@ export async function refreshTollFreeStatus(id: string): Promise<TollFreeVerific
     TWILIO_APPROVED: "approved",
     TWILIO_REJECTED: "rejected",
   };
-  return db.tollFreeVerification.update({
+  const updated = await db.tollFreeVerification.update({
     where: { id },
     data: {
       status: map[verification.status] ?? reg.status,
@@ -69,4 +70,36 @@ export async function refreshTollFreeStatus(id: string): Promise<TollFreeVerific
           : null,
     },
   });
+  // An approved toll-free number becomes a sender (see loadTenantSenders).
+  if (updated.status !== reg.status) invalidateSenderCache(reg.tenantId);
+  return updated;
+}
+
+/**
+ * Pull Twilio's current status for verifications still under review. Approval
+ * is what lets a toll-free number send, so it must reach the DB without anyone
+ * clicking anything. Each refresh bumps updatedAt, so `staleMs` spaces out
+ * re-checks of the same row. Run from the scheduler tick (all workspaces) and
+ * when the Compliance page loads (one workspace).
+ */
+export async function refreshPendingTollFreeVerifications(opts: { tenantId?: string; staleMs: number; limit: number }) {
+  const due = await db.tollFreeVerification.findMany({
+    where: {
+      ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
+      status: { in: ["submitted", "in_review"] },
+      verificationSid: { not: null },
+      updatedAt: { lt: new Date(Date.now() - opts.staleMs) },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: opts.limit,
+    select: { id: true },
+  });
+  for (const { id } of due) {
+    await refreshTollFreeStatus(id).catch(async (err) => {
+      console.error(`[puffping] toll-free verification refresh failed (${id}):`, err);
+      // Still space out the next attempt, or a row Twilio keeps erroring on
+      // (e.g. a deleted verification) would be re-fetched every tick.
+      await db.tollFreeVerification.update({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {});
+    });
+  }
 }

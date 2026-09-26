@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { NoSendingNumberError, queueCampaign, resumePendingSends, sendDirectMessage } from "./send";
 import { renderTemplate } from "./render";
+import { refreshPendingTollFreeVerifications } from "./tollfree";
 
 /**
  * Background scheduler (singleton per Node process).
@@ -11,6 +12,7 @@ import { renderTemplate } from "./render";
  *     the current step and scheduling the next.
  *
  *  3. Requeues send-queue rows orphaned by a dead worker (stale claims).
+ *  4. Polls toll-free verifications under review (approval unblocks sending).
  *
  * A reentrancy guard prevents overlapping ticks within a process; the singleton
  * interval prevents multiple schedulers per process. Cross-machine safety comes
@@ -24,6 +26,8 @@ const ENROLLMENT_BATCH = 200;
 const ENROLLMENT_LEASE_MS = 5 * 60_000;
 // A drip step whose workspace has no sending number waits this long, then retries.
 const NO_NUMBER_RETRY_MS = 60 * 60_000;
+// Each pending toll-free verification is re-checked with Twilio at most this often.
+const TOLLFREE_POLL_MS = 10 * 60_000;
 
 const g = globalThis as unknown as {
   __puffpingScheduler?: ReturnType<typeof setInterval>;
@@ -43,6 +47,7 @@ async function tick() {
     await launchDueCampaigns();
     await processDueEnrollments();
     await resumePendingSends();
+    await refreshPendingTollFreeVerifications({ staleMs: TOLLFREE_POLL_MS, limit: 25 });
   } catch (err) {
     console.error("[puffping] scheduler tick failed:", err);
   } finally {

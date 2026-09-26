@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge, Button, Card, Input, Label, PageHeader, Select, TextArea } from "@/components/ui";
+import type { SendingNumberStatus } from "@/components/sending-number-notice";
 
 /**
  * Compliance page — PLATFORM-MANAGED 10DLC MODEL.
@@ -35,6 +37,7 @@ const CAMPAIGN_BADGE: Record<CampaignStatus["state"], string> = {
 export default function CompliancePage() {
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [numbers, setNumbers] = useState<OwnedNumber[]>([]);
+  const [sending, setSending] = useState<SendingNumberStatus | null>(null);
   const [campaign, setCampaign] = useState<CampaignStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
@@ -67,6 +70,7 @@ export default function CompliancePage() {
     ]);
     setVerifications(tfRes.verifications ?? []);
     setNumbers(numRes.numbers ?? []);
+    setSending(numRes.sending ?? null);
     setCampaign(statusRes.campaign ?? null);
   }, []);
 
@@ -177,9 +181,20 @@ export default function CompliancePage() {
             )}
           </div>
         </div>
-        {numbers.length === 0 && (
-          <p className="mt-3 text-xs text-zinc-500">
-            No numbers yet — until you buy one, messages go out from PuffPing&apos;s shared pool.
+        {/* Sending needs one of the workspace's own numbers — there's no shared-pool fallback. */}
+        {sending?.canSend === false && (
+          <p className="mt-3 text-sm font-bold text-amber-300">
+            {sending.total === 0 ? (
+              <>
+                No numbers yet — your workspace can&apos;t send until it has one. Buy one on the{" "}
+                <Link href="/numbers" className="underline hover:text-emerald-700">
+                  Numbers
+                </Link>{" "}
+                page.
+              </>
+            ) : (
+              sending.reason
+            )}
           </p>
         )}
         {campaign && <p className="mt-2 font-mono text-[11px] text-zinc-500">Campaign {campaign.campaignSid}</p>}
