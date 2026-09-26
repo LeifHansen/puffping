@@ -1,4 +1,5 @@
-# Fly.io config for Textblast.io — deploys to the `textblast` Fly app.
+# Fly.io config for PuffPing. The Fly app keeps its original name, `textblast`;
+# the public domain is puffping.com (APP_BASE_URL below).
 app = "textblast"
 primary_region = "iad"
 

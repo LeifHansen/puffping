@@ -1,4 +1,4 @@
-# Textblast production image
+# PuffPing production image
 FROM node:22-slim AS base
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

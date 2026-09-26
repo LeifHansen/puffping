@@ -33,6 +33,26 @@ Living checklist for the current work stream. Update as phases land.
         `STRIPE_PRICE_GROWTH`). Until then the app stays on the free plan and
         the upgrade button reports "billing not configured."
 
+## Platform A2P 10DLC — LIVE (2026-09-26)
+
+- [x] Campaign `CM00d14a209e1c83c112c73c91d1e1eed5` on Messaging Service
+      `MG1dc1a3f40c323aabf6cf26770330a6da` approved; SIDs built into
+      `src/lib/twilio.ts`. Sends are pinned to each workspace's own pooled
+      numbers; `/compliance` shows live carrier status and can re-sync the pool.
+
+**Open product decisions** (not implemented — need an owner call):
+- Plan quotas (`messageQuota`) are displayed but not enforced. With one shared
+  campaign, an abusive free signup can burn Twilio spend and put the campaign
+  at risk for every workspace. Enforcing today would cap every workspace at the
+  free tier (1,000/mo) until Stripe is live.
+- Workspaces with no numbers send from the shared pool, so their replies can
+  route to whichever workspace owns the number Twilio picked. Option: require a
+  purchased number before sending.
+- Invites are accepted by matching email with no verification; needs email
+  delivery + token-based acceptance.
+- Pricing page ($29/$99) disagrees with `PLANS` in `src/lib/billing.ts`
+  ($49/$199); the Scale tier advertises SSO, which doesn't exist.
+
 ## Queued AFTER all four phases
 
 - [x] **Retro-chic UX redesign matched to the logo.** Done — cream paper theme,
@@ -56,7 +76,5 @@ Living checklist for the current work stream. Update as phases land.
       cream backdrop, soft bevels, tasteful pixel/retro accents used sparingly
       (not full GeoCities kitsch). Keep it legible and modern.
 
-      **Logo asset TODO:** the logo was shared as a chat image, which does not
-      land on disk. Drop the real file into `branding/` and copy the
-      web-served version to `public/brand/` (e.g. `public/brand/puffping-logo.png`
-      + an SVG mark) so the header/sidebar/favicon can reference it.
+      **Logo:** wired in as `public/puff-ping-logo.png`. An SVG mark in
+      `branding/` would still be nicer for crisp scaling.

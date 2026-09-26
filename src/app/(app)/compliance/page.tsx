@@ -29,7 +29,7 @@ const CAMPAIGN_BADGE: Record<CampaignStatus["state"], string> = {
   approved: "approved",
   pending: "pending_review",
   failed: "rejected",
-  unknown: "pending",
+  unknown: "unavailable", // couldn't reach Twilio — don't imply a carrier state
 };
 
 export default function CompliancePage() {
@@ -149,7 +149,7 @@ export default function CompliancePage() {
               join the sending pool automatically, and your messages always go out from your own numbers.
             </p>
           </div>
-          <Badge status={campaign ? CAMPAIGN_BADGE[campaign.state] : "pending"} />
+          <Badge status={campaign ? CAMPAIGN_BADGE[campaign.state] : "checking"} />
         </div>
         <div className="mt-3 grid gap-2 text-sm text-zinc-400 md:grid-cols-3">
           <div className="rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-3 py-2">
