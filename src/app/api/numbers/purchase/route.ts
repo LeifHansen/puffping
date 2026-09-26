@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isTollFree, normalizePhone } from "@/lib/phone";
-import { isTwilioConfigured, twilio } from "@/lib/twilio";
-import { resolveTenant, tenantMessagingServiceSid } from "@/lib/tenant";
+import { invalidateSenderCache } from "@/lib/send";
+import { isTwilioConfigured, messagingServiceSid, twilio } from "@/lib/twilio";
+import { currentTenantId } from "@/lib/tenant";
 
 /**
  * Purchase one or multiple numbers in a single request:
  * body = { phoneNumbers: string[] }. Each purchased number is attached to
- * the configured Messaging Service (if any) so it joins the sending pool.
+ * PuffPing's approved Messaging Service so it joins the sending pool (and the
+ * workspace's sends are pinned to it — see pickSender in lib/send).
  */
 export async function POST(req: NextRequest) {
   if (!isTwilioConfigured()) {
@@ -21,9 +23,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "phoneNumbers array is required (E.164)" }, { status: 400 });
   }
 
-  const tenant = await resolveTenant(req);
+  const tenantId = await currentTenantId(req);
   const client = twilio();
-  const serviceSid = tenantMessagingServiceSid(tenant);
+  const serviceSid = messagingServiceSid();
   const purchased: string[] = [];
   const failed: { phoneNumber: string; error: string }[] = [];
 
@@ -40,20 +42,20 @@ export async function POST(req: NextRequest) {
     }
 
     let inService = false;
-    if (serviceSid) {
-      try {
-        await client.messaging.v1.services(serviceSid).phoneNumbers.create({ phoneNumberSid: incoming.sid });
-        inService = true;
-      } catch {
-        // number bought but not pooled — surfaced via inMessagingService=false
-      }
+    try {
+      await client.messaging.v1.services(serviceSid).phoneNumbers.create({ phoneNumberSid: incoming.sid });
+      inService = true;
+    } catch (err) {
+      // Bought but not pooled — surfaced via inMessagingService=false; the
+      // Compliance page's "Sync numbers" (or the next boot) retries the attach.
+      console.error(`[puffping] purchased ${incoming.phoneNumber} but couldn't pool it:`, err);
     }
 
     try {
       await db.phoneNumber.upsert({
         where: { twilioSid: incoming.sid },
         create: {
-          tenantId: tenant.id,
+          tenantId,
           phoneNumber: incoming.phoneNumber,
           twilioSid: incoming.sid,
           friendlyName: incoming.friendlyName,
@@ -69,5 +71,6 @@ export async function POST(req: NextRequest) {
     purchased.push(incoming.phoneNumber);
   }
 
+  if (purchased.length) invalidateSenderCache(tenantId);
   return NextResponse.json({ purchased, failed }, { status: failed.length && !purchased.length ? 500 : 200 });
 }

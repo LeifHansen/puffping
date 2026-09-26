@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "PuffPing — High-volume SMS & MMS marketing",
   description:
-    "Send compliant mass text campaigns at scale. Automated 10DLC & toll-free registration, a two-way inbox, MMS, dynamic fields, and reporting — built on Twilio.",
+    "Send compliant mass text campaigns at scale. Carrier-approved 10DLC sending, toll-free verification, a two-way inbox, MMS, dynamic fields, and reporting — built on Twilio.",
   icons: { icon: "/puff-ping-logo.png", apple: "/puff-ping-logo.png" },
 };
 

@@ -113,7 +113,7 @@ export default function NumbersPage() {
     <div>
       <PageHeader
         title="Numbers"
-        subtitle="Shop for and purchase local (10DLC) or toll-free numbers — purchased numbers auto-join your messaging service pool"
+        subtitle="Shop for and purchase local (10DLC) or toll-free numbers — purchased numbers join PuffPing's approved sending pool automatically"
       />
 
       <Card className="mb-4">
@@ -195,7 +195,7 @@ export default function NumbersPage() {
               </div>
               <p className="mt-1 text-xs text-zinc-500">
                 {n.numberType === "tollfree" ? "Toll-free" : "Local 10DLC"} ·{" "}
-                {n.inMessagingService ? "in messaging service pool" : "not pooled yet"}
+                {n.inMessagingService ? "in sending pool" : "not pooled yet — sync on the Compliance page"}
               </p>
             </Card>
           ))}

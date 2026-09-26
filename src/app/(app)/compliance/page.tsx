@@ -6,10 +6,11 @@ import { Badge, Button, Card, Input, Label, PageHeader, Select, TextArea } from 
 /**
  * Compliance page — PLATFORM-MANAGED 10DLC MODEL.
  *
- * Self-serve A2P 10DLC registration is disabled: every workspace sends through
- * PuffPing's approved Messaging Service on the main Twilio account, and numbers
- * purchased on the Numbers page are attached to that service's pool
- * automatically. (The old self-serve wizard lives in git history and can come
+ * Self-serve A2P 10DLC registration is disabled: every workspace sends under
+ * PuffPing's carrier-approved campaign on the main Twilio account, and numbers
+ * purchased on the Numbers page join that Messaging Service's pool
+ * automatically. The status card reads the campaign's live carrier status from
+ * /api/compliance. (The old self-serve wizard lives in git history and can come
  * back if per-tenant ISV registration returns.)
  *
  * Toll-free verification remains self-serve since it's per-number.
@@ -17,10 +18,26 @@ import { Badge, Button, Card, Input, Label, PageHeader, Select, TextArea } from 
 
 type Verification = { id: string; phoneNumber: string; status: string; rejectionReason: string | null };
 type OwnedNumber = { twilioSid: string; phoneNumber: string; numberType: string; inMessagingService: boolean };
+type CampaignStatus = {
+  campaignSid: string;
+  state: "approved" | "pending" | "failed" | "unknown";
+  useCase: string | null;
+  error?: string;
+};
+
+const CAMPAIGN_BADGE: Record<CampaignStatus["state"], string> = {
+  approved: "approved",
+  pending: "pending_review",
+  failed: "rejected",
+  unknown: "pending",
+};
 
 export default function CompliancePage() {
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [numbers, setNumbers] = useState<OwnedNumber[]>([]);
+  const [campaign, setCampaign] = useState<CampaignStatus | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTf, setShowTf] = useState(false);
@@ -43,12 +60,14 @@ export default function CompliancePage() {
   });
 
   const load = useCallback(async () => {
-    const [tfRes, numRes] = await Promise.all([
+    const [tfRes, numRes, statusRes] = await Promise.all([
       fetch("/api/registration/tollfree").then((r) => r.json()),
       fetch("/api/numbers").then((r) => r.json()),
+      fetch("/api/compliance").then((r) => r.json()),
     ]);
     setVerifications(tfRes.verifications ?? []);
     setNumbers(numRes.numbers ?? []);
+    setCampaign(statusRes.campaign ?? null);
   }, []);
 
   useEffect(() => {
@@ -66,6 +85,25 @@ export default function CompliancePage() {
       <Input value={tf[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </div>
   );
+
+  async function syncNumbers() {
+    setSyncing(true);
+    setSyncNotice(null);
+    const res = await fetch("/api/compliance", { method: "POST" });
+    const data = await res.json();
+    setSyncing(false);
+    if (!res.ok) {
+      setSyncNotice(data.error ?? "Sync failed");
+    } else if (data.failed?.length) {
+      setSyncNotice(
+        `${data.pooled}/${data.total} pooled. Couldn't add: ` +
+          data.failed.map((f: { phoneNumber: string; error: string }) => `${f.phoneNumber} (${f.error})`).join(" · ")
+      );
+    } else {
+      setSyncNotice(`All ${data.total} number(s) are in the sending pool.`);
+    }
+    load();
+  }
 
   async function submitTollfree() {
     const num = tollfreeNumbers.find((n) => n.twilioSid === tf.phoneNumberSid);
@@ -102,26 +140,50 @@ export default function CompliancePage() {
       <Card className="mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="font-extrabold text-emerald-700">A2P 10DLC — managed by PuffPing ✓</h2>
+            <h2 className="font-extrabold text-emerald-700">
+              A2P 10DLC — managed by PuffPing{campaign?.state === "approved" ? " ✓" : ""}
+            </h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Your workspace sends through PuffPing&apos;s carrier-approved 10DLC campaign — no registration
+              Your workspace sends under PuffPing&apos;s carrier-registered 10DLC campaign — no registration
               paperwork needed. Local numbers you purchase on the <span className="font-bold">Numbers</span> page
-              join the approved sending pool automatically.
+              join the sending pool automatically, and your messages always go out from your own numbers.
             </p>
           </div>
-          <Badge status="registered" />
+          <Badge status={campaign ? CAMPAIGN_BADGE[campaign.state] : "pending"} />
         </div>
         <div className="mt-3 grid gap-2 text-sm text-zinc-400 md:grid-cols-3">
           <div className="rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-3 py-2">
-            <span className="font-bold text-zinc-300">Campaign</span>: approved
+            <span className="font-bold text-zinc-300">Campaign</span>:{" "}
+            {!campaign
+              ? "checking…"
+              : campaign.state === "unknown"
+                ? "status unavailable"
+                : campaign.state === "pending"
+                  ? "in carrier review"
+                  : campaign.state}
+            {campaign?.useCase && <span className="text-zinc-500"> · {campaign.useCase.toLowerCase().replace(/_/g, " ")}</span>}
           </div>
           <div className="rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-3 py-2">
             <span className="font-bold text-zinc-300">Your numbers</span>: {numbers.length}
           </div>
-          <div className="rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-3 py-2">
-            <span className="font-bold text-zinc-300">In sending pool</span>: {pooled}
+          <div className="flex items-center justify-between gap-2 rounded-xl border-2 border-[color:var(--color-zinc-800)] bg-[color:var(--color-brand-cream)] px-3 py-2">
+            <span>
+              <span className="font-bold text-zinc-300">In sending pool</span>: {pooled}
+            </span>
+            {pooled < numbers.length && (
+              <Button variant="ghost" onClick={syncNumbers} disabled={syncing}>
+                {syncing ? "Syncing…" : "Sync numbers"}
+              </Button>
+            )}
           </div>
         </div>
+        {numbers.length === 0 && (
+          <p className="mt-3 text-xs text-zinc-500">
+            No numbers yet — until you buy one, messages go out from PuffPing&apos;s shared pool.
+          </p>
+        )}
+        {campaign && <p className="mt-2 font-mono text-[11px] text-zinc-500">Campaign {campaign.campaignSid}</p>}
+        {syncNotice && <p className="mt-2 text-sm font-bold text-zinc-300">{syncNotice}</p>}
       </Card>
 
       {/* ---------- Toll-free verification (still self-serve, per number) ---------- */}

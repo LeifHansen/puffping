@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "PuffPing — High-volume SMS & MMS marketing that stays compliant",
   description:
-    "Launch mass text campaigns to hundreds or 100,000+ contacts. Automated 10DLC & toll-free registration, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
+    "Launch mass text campaigns to hundreds or 100,000+ contacts. Carrier-approved 10DLC sending, toll-free verification, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
 };
 
 const FEATURES = [
@@ -85,7 +85,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
-              href="/dashboard"
+              href="/signup"
               className="retro-press rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
             >
               Get started free
@@ -104,7 +104,7 @@ export default function LandingPage() {
             {[
               ["100k+", "contacts per blast"],
               ["2-way", "real-time inbox"],
-              ["10DLC", "auto-registered"],
+              ["10DLC", "carrier-approved"],
             ].map(([stat, label]) => (
               <div key={label} className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 px-4 py-5 retro-shadow">
                 <div className="text-2xl font-extrabold text-emerald-600 md:text-3xl">{stat}</div>
@@ -210,10 +210,10 @@ export default function LandingPage() {
             Spin up a workspace, import your list, and reach every customer in minutes.
           </p>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="retro-press mt-7 inline-block rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
           >
-            Open the app
+            Get started free
           </Link>
         </div>
       </section>

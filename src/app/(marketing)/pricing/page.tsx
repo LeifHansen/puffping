@@ -17,7 +17,7 @@ const PLANS = [
       "SMS & MMS campaigns",
       "Two-way inbox",
       "CSV import & dynamic fields",
-      "Automated 10DLC registration",
+      "Approved 10DLC campaign included",
     ],
     cta: "Start Starter",
     highlight: false,
@@ -97,7 +97,7 @@ export default function PricingPage() {
               ))}
             </ul>
             <Link
-              href="/dashboard"
+              href="/signup"
               className={`mt-7 rounded-md px-4 py-2.5 text-center text-sm font-semibold transition-colors ${
                 p.highlight
                   ? "bg-emerald-600 text-white hover:bg-emerald-500"
@@ -111,7 +111,8 @@ export default function PricingPage() {
       </div>
 
       <p className="mx-auto mt-10 max-w-2xl text-center text-xs text-zinc-500">
-        All plans include automated 10DLC / toll-free registration, opt-out compliance, and the two-way inbox.
+        All plans send under PuffPing&apos;s carrier-approved 10DLC campaign and include toll-free verification, opt-out
+        compliance, and the two-way inbox.
         Multi-tenant workspaces are available on Scale.
       </p>
     </div>

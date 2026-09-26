@@ -1,7 +1,6 @@
 import { db } from "./db";
 import { renderTemplate, segmentCount } from "./render";
-import { appBaseUrl, twilio } from "./twilio";
-import { tenantMessagingServiceSid } from "./tenant";
+import { appBaseUrl, messagingServiceSid, twilio } from "./twilio";
 import { buildLinkMap, rewriteLinks } from "./links";
 import { parseDefinition, segmentWhere } from "./segments";
 import { Prisma } from "@prisma/client";
@@ -13,8 +12,9 @@ import { Prisma } from "@prisma/client";
  * rows in batches and returns immediately. A singleton background worker
  * drains the queue with bounded concurrency, retries Twilio 429s with
  * backoff, and survives restarts (instrumentation resumes any pending rows
- * on boot). Twilio's Messaging Service handles number pooling and carrier
- * throughput; delivery outcomes arrive via the status webhook.
+ * on boot). Every send goes through PuffPing's approved Messaging Service,
+ * pinned to one of the workspace's own pooled numbers (see pickSender);
+ * delivery outcomes arrive via the status webhook.
  */
 
 const ENQUEUE_BATCH = 1000; // contacts fetched/rendered per DB round-trip
@@ -26,18 +26,10 @@ const MAX_ATTEMPTS = 3;
 export async function queueCampaign(campaignId: string): Promise<{ queued: number }> {
   const campaign = await db.campaign.findUniqueOrThrow({
     where: { id: campaignId },
-    include: { lists: true, tenant: true, segment: true },
+    include: { lists: true, segment: true },
   });
-  if (!tenantMessagingServiceSid(campaign.tenant)) {
-    throw new Error(
-      "No Messaging Service configured. Set the TWILIO_MESSAGING_SERVICE_SID secret to the platform's approved messaging service."
-    );
-  }
-
-  await db.campaign.update({
-    where: { id: campaignId },
-    data: { status: "sending", startedAt: new Date() },
-  });
+  // Callers (send route, scheduler) have already atomically claimed the
+  // campaign into `sending`, so there's no status write here.
 
   const tenantId = campaign.tenantId;
   const listIds = campaign.lists.map((l) => l.listId);
@@ -125,6 +117,7 @@ function ensureSendWorker() {
 
 async function workerLoop() {
   const client = twilio();
+  const serviceSid = messagingServiceSid();
   const statusCallback = `${appBaseUrl()}/api/webhooks/twilio/status`;
 
   for (;;) {
@@ -132,7 +125,6 @@ async function workerLoop() {
       where: { status: "pending", direction: "outbound" },
       orderBy: { createdAt: "asc" },
       take: CLAIM_BATCH,
-      include: { tenant: true },
     });
     if (!candidates.length) break;
 
@@ -151,14 +143,7 @@ async function workerLoop() {
       for (;;) {
         const msg = queue.shift();
         if (!msg) return;
-        const serviceSid = tenantMessagingServiceSid(msg.tenant);
-        if (!serviceSid) {
-          await db.message.update({
-            where: { id: msg.id },
-            data: { status: "failed", errorMessage: "No messaging service configured for tenant" },
-          });
-          continue;
-        }
+        const from = pickSender(await tenantSenders(msg.tenantId), msg.phone);
         let attempt = 0;
         for (;;) {
           attempt++;
@@ -166,6 +151,7 @@ async function workerLoop() {
             const res = await client.messages.create({
               to: msg.phone,
               messagingServiceSid: serviceSid,
+              from,
               body: msg.body,
               mediaUrl: msg.mediaUrls ? (JSON.parse(msg.mediaUrls) as string[]) : undefined,
               statusCallback,
@@ -216,6 +202,74 @@ async function finalizeCompletedCampaigns() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sender selection
+// ---------------------------------------------------------------------------
+//
+// All workspaces share ONE Messaging Service. Left to itself, Twilio would pick
+// any number in that shared pool — including another workspace's — and the
+// recipient's reply (or STOP) would then route to that other workspace via the
+// inbound webhook. So each send is pinned to one of the sending workspace's own
+// pooled numbers. A workspace that hasn't bought a number yet falls back to the
+// service's pool.
+
+const SENDER_CACHE_TTL_MS = 60_000;
+// Caches the in-flight promise so the worker's concurrent senders share one query.
+const senderCache = new Map<string, { numbers: Promise<string[]>; expiresAt: number }>();
+
+/**
+ * The workspace's numbers that can send right now: in the Messaging Service
+ * pool, and — for toll-free — carrier-verified (local numbers are covered by
+ * the approved 10DLC campaign). Cached briefly; this is on the worker hot path.
+ */
+function tenantSenders(tenantId: string): Promise<string[]> {
+  const hit = senderCache.get(tenantId);
+  if (hit && hit.expiresAt > Date.now()) return hit.numbers;
+  const numbers = loadTenantSenders(tenantId);
+  senderCache.set(tenantId, { numbers, expiresAt: Date.now() + SENDER_CACHE_TTL_MS });
+  numbers.catch(() => senderCache.delete(tenantId)); // don't cache a failed lookup
+  return numbers;
+}
+
+async function loadTenantSenders(tenantId: string): Promise<string[]> {
+  const [pooled, verifiedTollFree] = await Promise.all([
+    db.phoneNumber.findMany({
+      where: { tenantId, inMessagingService: true },
+      select: { phoneNumber: true, numberType: true, twilioSid: true },
+      orderBy: { phoneNumber: "asc" },
+    }),
+    db.tollFreeVerification.findMany({
+      where: { tenantId, status: "approved" },
+      select: { phoneNumberSid: true },
+    }),
+  ]);
+  const verified = new Set(verifiedTollFree.map((v) => v.phoneNumberSid));
+  return pooled
+    .filter((n) => n.numberType !== "tollfree" || verified.has(n.twilioSid))
+    .map((n) => n.phoneNumber);
+}
+
+/** Drop cached sender lists after numbers are bought or (re)pooled. */
+export function invalidateSenderCache(tenantId?: string) {
+  if (tenantId) senderCache.delete(tenantId);
+  else senderCache.clear();
+}
+
+/**
+ * Deterministic per-recipient pick (FNV-1a over the phone), so a contact always
+ * hears from the same number across campaigns, drips, and inbox replies.
+ * `undefined` = let the Messaging Service choose from its pool.
+ */
+export function pickSender(numbers: string[], to: string): string | undefined {
+  if (!numbers.length) return undefined;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < to.length; i++) {
+    hash ^= to.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return numbers[(hash >>> 0) % numbers.length];
+}
+
 /** Called from instrumentation on boot: resume any interrupted sends. */
 export async function resumePendingSends() {
   // Rows stuck in `sending` from a crashed process go back to `pending`
@@ -236,13 +290,11 @@ export async function sendDirectMessage(opts: {
   conversationId?: string;
   contactId?: string;
 }): Promise<string> {
-  const tenant = await db.tenant.findUniqueOrThrow({ where: { id: opts.tenantId } });
-  const serviceSid = tenantMessagingServiceSid(tenant);
-  if (!serviceSid) throw new Error("No Messaging Service configured.");
   const client = twilio();
   const msg = await client.messages.create({
     to: opts.to,
-    messagingServiceSid: serviceSid,
+    messagingServiceSid: messagingServiceSid(),
+    from: pickSender(await tenantSenders(opts.tenantId), opts.to),
     body: opts.body,
     mediaUrl: opts.mediaUrls,
     statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,

@@ -18,7 +18,7 @@ function Header() {
             Sign in
           </Link>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="retro-press rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-3.5 py-2 text-sm font-bold text-white shadow-[3px_3px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
           >
             Get started
