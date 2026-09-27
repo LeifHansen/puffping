@@ -197,8 +197,10 @@ export default function CompliancePage() {
             ) : sending.pooled === sending.total ? (
               // Everything is pooled, so what's left is toll-free verification — on this page.
               <>
-                Your toll-free number can&apos;t send until its carrier verification (below) is approved. To send
-                right away, buy a local number on the{" "}
+                {verifications.some((v) => v.status === "submitted" || v.status === "in_review")
+                  ? `Your toll-free ${sending.total === 1 ? "number" : "numbers"} can't send until carrier verification (below) is approved.`
+                  : `Toll-free numbers can't send until they pass carrier verification — use "Verify a number" below.`}{" "}
+                To send right away, buy a local number on the{" "}
                 <Link href="/numbers" className="underline hover:text-emerald-700">
                   Numbers
                 </Link>{" "}

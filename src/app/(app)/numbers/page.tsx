@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, EmptyState, Input, Label, PageHeader, Select } from "@/components/ui";
 import { SendingNumberNotice, type SendingNumberStatus } from "@/components/sending-number-notice";
@@ -227,11 +228,18 @@ export default function NumbersPage() {
               </div>
               <p className="mt-1 text-xs text-zinc-500">
                 {n.numberType === "tollfree" ? "Toll-free" : "Local 10DLC"} ·{" "}
-                {n.canSend
-                  ? "sending from this number"
-                  : n.inMessagingService
-                    ? "can send once its verification is approved (Compliance page)"
-                    : "not in the sending pool yet — Sync numbers on the Compliance page"}
+                {n.canSend ? (
+                  "sending from this number"
+                ) : (
+                  <>
+                    {n.inMessagingService
+                      ? "can send once its carrier verification is approved — "
+                      : "not in the sending pool yet — Sync numbers on "}
+                    <Link href="/compliance" className="underline hover:text-emerald-700">
+                      {n.inMessagingService ? "verify on Compliance" : "Compliance"}
+                    </Link>
+                  </>
+                )}
               </p>
             </Card>
           ))}
