@@ -423,13 +423,16 @@ export async function releaseSlot(slotId: string): Promise<void> {
 // Campaigns (platform admin)
 // ---------------------------------------------------------------------------
 
-/** Local numbers already in a service's sender pool that PuffPing doesn't track (they use up capacity). */
-async function untrackedPooledLocalCount(messagingServiceSid: string): Promise<number> {
+/** SIDs of the local (10DLC) numbers currently in a service's sender pool. */
+async function pooledLocalSids(messagingServiceSid: string): Promise<string[]> {
   const pooled = await twilio().messaging.v1.services(messagingServiceSid).phoneNumbers.list({ limit: 1000 });
-  const local = pooled.filter((p) => !isTollFree(p.phoneNumber));
-  if (!local.length) return 0;
-  const tracked = await db.phoneNumber.count({ where: { twilioSid: { in: local.map((p) => p.sid) } } });
-  return local.length - tracked;
+  return pooled.filter((p) => !isTollFree(p.phoneNumber)).map((p) => p.sid);
+}
+
+/** Pooled local numbers PuffPing doesn't track — they use up campaign capacity. */
+async function untrackedCount(pooledSids: string[]): Promise<number> {
+  if (!pooledSids.length) return 0;
+  return pooledSids.length - (await db.phoneNumber.count({ where: { twilioSid: { in: pooledSids } } }));
 }
 
 /**
@@ -464,7 +467,7 @@ export async function addCampaign(input: { messagingServiceSid: string; name?: s
     );
   }
 
-  const seatsTaken = await untrackedPooledLocalCount(sid);
+  const seatsTaken = await untrackedCount(await pooledLocalSids(sid));
   const slotCount = capacity - seatsTaken;
   if (slotCount <= 0) {
     throw new SlotError(`All ${capacity} seats are already used by numbers in this service's sender pool`);
@@ -495,18 +498,26 @@ export async function bootstrapCampaignFromEnv(): Promise<void> {
   if (!sid) return;
   if (await db.messagingCampaign.findUnique({ where: { messagingServiceSid: sid } })) return;
 
-  const legacy = await db.phoneNumber.findMany({
-    where: { inMessagingService: true, numberType: "local", slot: { is: null } },
-    orderBy: { purchasedAt: "asc" },
-  });
-  let seatsTaken = 0;
+  // The service's real sender pool decides which numbers move into Campaign 1:
+  // a number flagged inMessagingService may sit in a different service (e.g.
+  // from the old per-tenant 10DLC flow) and must not get a slot on this one.
+  let pooledSids: string[] | null = null;
   if (isTwilioConfigured()) {
     try {
-      seatsTaken = await untrackedPooledLocalCount(sid);
+      pooledSids = await pooledLocalSids(sid);
     } catch (err) {
-      console.error("[puffping] campaign bootstrap: couldn't read the sender pool (assuming none untracked):", err);
+      console.error("[puffping] campaign bootstrap: couldn't read the sender pool (falling back to inMessagingService):", err);
     }
   }
+  const legacy = await db.phoneNumber.findMany({
+    where: {
+      numberType: "local",
+      slot: { is: null },
+      ...(pooledSids ? { twilioSid: { in: pooledSids } } : { inMessagingService: true }),
+    },
+    orderBy: { purchasedAt: "asc" },
+  });
+  const seatsTaken = pooledSids ? await untrackedCount(pooledSids) : 0;
   const capacity = DEFAULT_CAMPAIGN_CAPACITY;
   const seats = Math.max(0, capacity - seatsTaken);
   const migrated = legacy.slice(0, seats);
