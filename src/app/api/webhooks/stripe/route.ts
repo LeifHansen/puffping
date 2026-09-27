@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
+import {
+  activateSlotFromCheckout,
+  releaseReservation,
+  syncSlotSubscription,
+  type StripeCheckoutSession,
+  type StripeSubscription,
+} from "@/lib/slots";
 
 /**
- * Stripe webhook: keeps each workspace's plan + subscription status in sync.
+ * Stripe webhook: keeps each workspace's plan + subscription status in sync,
+ * and drives number-slot purchases (metadata.kind === "number_slot": one
+ * subscription per slot — see src/lib/slots.ts).
  * Verifies the Stripe-Signature header against STRIPE_WEBHOOK_SECRET (manual
  * HMAC — no SDK dependency). Fails closed (503) when the secret is missing so
  * forged events can never change a workspace's plan.
@@ -45,11 +54,14 @@ export async function POST(req: NextRequest) {
   const obj = event.data?.object ?? {};
   const metadata = (obj.metadata as Record<string, string>) ?? {};
   const tenantId = metadata.tenantId || (obj.client_reference_id as string) || null;
+  const isSlot = metadata.kind === "number_slot";
 
   try {
     switch (event.type) {
       case "checkout.session.completed": {
-        if (tenantId) {
+        if (isSlot) {
+          await activateSlotFromCheckout(obj as unknown as StripeCheckoutSession);
+        } else if (tenantId) {
           await db.tenant.updateMany({
             where: { id: tenantId },
             data: {
@@ -62,9 +74,21 @@ export async function POST(req: NextRequest) {
         }
         break;
       }
+      case "checkout.session.expired": {
+        if (isSlot && metadata.slotId) {
+          await releaseReservation({ slotId: metadata.slotId, sessionId: obj.id as string });
+        }
+        break;
+      }
+      case "customer.subscription.created": {
+        await syncSlotSubscription(obj as unknown as StripeSubscription, false);
+        break;
+      }
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        const status = event.type.endsWith("deleted")
+        const deleted = event.type.endsWith("deleted");
+        if ((await syncSlotSubscription(obj as unknown as StripeSubscription, deleted)) === "handled") break;
+        const status = deleted
           ? "canceled"
           : (obj.status as string) === "past_due"
             ? "past_due"
@@ -81,7 +105,10 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (err) {
-    console.error("[puffping] stripe webhook handling failed:", err);
+    // 500 → Stripe retries (all handlers are idempotent). Swallowing would
+    // silently lose a paid slot activation or a release.
+    console.error(`[puffping] stripe webhook ${event.type} handling failed:`, err);
+    return NextResponse.json({ error: "Webhook handling failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

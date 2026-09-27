@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Multi-tenant: route the inbound message to the tenant that owns the
-  // destination (`To`) number. Falls back to the default tenant (single-tenant).
+  // destination (`To`) number — each number belongs to exactly one workspace
+  // (one slot). Unknown numbers fall back to the default tenant.
   const toNumber = params.To ?? "";
   const owned = toNumber ? await db.phoneNumber.findFirst({ where: { phoneNumber: toNumber } }) : null;
   const tenantId = owned?.tenantId ?? (await getDefaultTenantId());
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
   await recordInboundMessage({
     tenantId,
     from: params.From ?? "",
+    toNumber: owned ? toNumber : undefined,
     body: params.Body ?? "",
     twilioSid: params.MessageSid ?? params.SmsSid ?? "",
     mediaUrls,

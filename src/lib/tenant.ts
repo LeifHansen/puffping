@@ -55,15 +55,3 @@ export async function currentTenantId(req?: NextRequest): Promise<string> {
   if (!session) throw new Error("Unauthorized: sign in required");
   return session.tenantId;
 }
-
-/**
- * The messaging service SID to send from. CURRENT MODEL: every workspace sends
- * through the platform's single approved Messaging Service
- * (TWILIO_MESSAGING_SERVICE_SID) on the main Twilio account — purchased
- * numbers are attached to its pool but tracked per-tenant. A tenant-specific
- * service (per-tenant Twilio / ISV subaccounts) is only used if the env var is
- * unset.
- */
-export function tenantMessagingServiceSid(tenant: Pick<Tenant, "twilioMessagingServiceSid">): string | undefined {
-  return process.env.TWILIO_MESSAGING_SERVICE_SID || tenant.twilioMessagingServiceSid || undefined;
-}

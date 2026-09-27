@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { renderTemplate, segmentCount } from "./render";
 import { appBaseUrl, twilio } from "./twilio";
-import { tenantMessagingServiceSid } from "./tenant";
+import { NO_SENDER_ERROR, pickFrom, pickSender, sendableNumbers, type Sender } from "./sender";
 import { buildLinkMap, rewriteLinks } from "./links";
 import { parseDefinition, segmentWhere } from "./segments";
 import { Prisma } from "@prisma/client";
@@ -13,8 +13,9 @@ import { Prisma } from "@prisma/client";
  * rows in batches and returns immediately. A singleton background worker
  * drains the queue with bounded concurrency, retries Twilio 429s with
  * backoff, and survives restarts (instrumentation resumes any pending rows
- * on boot). Twilio's Messaging Service handles number pooling and carrier
- * throughput; delivery outcomes arrive via the status webhook.
+ * on boot). Each message goes out from one of the workspace's own numbers
+ * (see src/lib/sender.ts) through that number's campaign Messaging Service;
+ * delivery outcomes arrive via the status webhook.
  */
 
 const ENQUEUE_BATCH = 1000; // contacts fetched/rendered per DB round-trip
@@ -26,13 +27,10 @@ const MAX_ATTEMPTS = 3;
 export async function queueCampaign(campaignId: string): Promise<{ queued: number }> {
   const campaign = await db.campaign.findUniqueOrThrow({
     where: { id: campaignId },
-    include: { lists: true, tenant: true, segment: true },
+    include: { lists: true, segment: true },
   });
-  if (!tenantMessagingServiceSid(campaign.tenant)) {
-    throw new Error(
-      "No Messaging Service configured. Set the TWILIO_MESSAGING_SERVICE_SID secret to the platform's approved messaging service."
-    );
-  }
+  const senders = await sendableNumbers(campaign.tenantId);
+  if (!senders.length) throw new Error(NO_SENDER_ERROR);
 
   await db.campaign.update({
     where: { id: campaignId },
@@ -65,6 +63,13 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
     if (!contacts.length) break;
     cursor = contacts[contacts.length - 1].id;
 
+    // Sticky sender: contacts with an existing thread keep its number.
+    const threads = await db.conversation.findMany({
+      where: { tenantId, phone: { in: contacts.map((c) => c.phone) }, fromNumber: { not: null } },
+      select: { phone: true, fromNumber: true },
+    });
+    const threadNumber = new Map(threads.map((t) => [t.phone, t.fromNumber]));
+
     const rows = contacts
       .map((contact) => {
         const rendered = renderTemplate(campaign.body, contact);
@@ -75,6 +80,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
           tenantId,
           direction: "outbound",
           phone: contact.phone,
+          fromNumber: pickFrom(senders, contact.phone, threadNumber.get(contact.phone))?.phoneNumber ?? null,
           body,
           mediaUrls,
           status: "pending",
@@ -132,7 +138,6 @@ async function workerLoop() {
       where: { status: "pending", direction: "outbound" },
       orderBy: { createdAt: "asc" },
       take: CLAIM_BATCH,
-      include: { tenant: true },
     });
     if (!candidates.length) break;
 
@@ -147,15 +152,26 @@ async function workerLoop() {
     const claimedIds = new Set(claimedRows.map((r) => r.id));
     const queue = candidates.filter((m) => claimedIds.has(m.id));
     if (!queue.length) continue; // another worker claimed this batch
+
+    // Sendable numbers per tenant, loaded once per batch so a number that just
+    // went past due / finished registering is picked up on the next batch.
+    const sendersByTenant = new Map<string, Promise<Sender[]>>();
+    const sendersFor = (tenantId: string) => {
+      let p = sendersByTenant.get(tenantId);
+      if (!p) sendersByTenant.set(tenantId, (p = sendableNumbers(tenantId)));
+      return p;
+    };
+
     async function sender() {
       for (;;) {
         const msg = queue.shift();
         if (!msg) return;
-        const serviceSid = tenantMessagingServiceSid(msg.tenant);
-        if (!serviceSid) {
+        // The number chosen at enqueue time, unless it can no longer send.
+        const from = pickFrom(await sendersFor(msg.tenantId), msg.phone, msg.fromNumber);
+        if (!from) {
           await db.message.update({
             where: { id: msg.id },
-            data: { status: "failed", errorMessage: "No messaging service configured for tenant" },
+            data: { status: "failed", errorMessage: NO_SENDER_ERROR },
           });
           continue;
         }
@@ -165,14 +181,15 @@ async function workerLoop() {
           try {
             const res = await client.messages.create({
               to: msg.phone,
-              messagingServiceSid: serviceSid,
+              from: from.phoneNumber,
+              messagingServiceSid: from.messagingServiceSid,
               body: msg.body,
               mediaUrl: msg.mediaUrls ? (JSON.parse(msg.mediaUrls) as string[]) : undefined,
               statusCallback,
             });
             await db.message.update({
               where: { id: msg.id },
-              data: { twilioSid: res.sid, status: res.status ?? "queued" },
+              data: { twilioSid: res.sid, status: res.status ?? "queued", fromNumber: from.phoneNumber },
             });
             break;
           } catch (err) {
@@ -236,13 +253,20 @@ export async function sendDirectMessage(opts: {
   conversationId?: string;
   contactId?: string;
 }): Promise<string> {
-  const tenant = await db.tenant.findUniqueOrThrow({ where: { id: opts.tenantId } });
-  const serviceSid = tenantMessagingServiceSid(tenant);
-  if (!serviceSid) throw new Error("No Messaging Service configured.");
+  // Reply on the thread's number when there is one (sticky per contact).
+  const thread = await db.conversation.findFirst({
+    where: opts.conversationId
+      ? { id: opts.conversationId, tenantId: opts.tenantId }
+      : { tenantId: opts.tenantId, phone: opts.to },
+    select: { fromNumber: true },
+  });
+  const from = await pickSender(opts.tenantId, opts.to, thread?.fromNumber);
+  if (!from) throw new Error(NO_SENDER_ERROR);
   const client = twilio();
   const msg = await client.messages.create({
     to: opts.to,
-    messagingServiceSid: serviceSid,
+    from: from.phoneNumber,
+    messagingServiceSid: from.messagingServiceSid,
     body: opts.body,
     mediaUrl: opts.mediaUrls,
     statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,
@@ -252,6 +276,7 @@ export async function sendDirectMessage(opts: {
       tenantId: opts.tenantId,
       direction: "outbound",
       phone: opts.to,
+      fromNumber: from.phoneNumber,
       body: opts.body,
       mediaUrls: opts.mediaUrls ? JSON.stringify(opts.mediaUrls) : null,
       twilioSid: msg.sid,
@@ -264,7 +289,7 @@ export async function sendDirectMessage(opts: {
   if (opts.conversationId) {
     await db.conversation.update({
       where: { id: opts.conversationId },
-      data: { lastMessageAt: new Date(), lastMessageBody: opts.body },
+      data: { lastMessageAt: new Date(), lastMessageBody: opts.body, fromNumber: from.phoneNumber },
     });
   }
   return record.id;

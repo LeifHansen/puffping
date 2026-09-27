@@ -22,7 +22,7 @@ export const PLANS: Plan[] = [
     priceMonthly: 0,
     messageQuota: 1_000,
     stripePriceEnv: "",
-    features: ["1,000 messages / mo", "1 number", "Two-way inbox", "CSV import"],
+    features: ["1,000 messages / mo", "Two-way inbox", "CSV import"],
   },
   {
     id: "starter",
@@ -59,21 +59,47 @@ export async function monthlyUsage(tenantId: string): Promise<number> {
   });
 }
 
+/** Monthly price of one number slot (USD). Billed via STRIPE_PRICE_NUMBER_SLOT. */
+export const SLOT_PRICE_MONTHLY = 25;
+
 /**
- * Create a Stripe Checkout Session via the REST API (no SDK dependency).
- * Returns the hosted checkout URL, or null if Stripe isn't configured.
+ * Minimal Stripe REST call (form-encoded, no SDK dependency). Throws on non-2xx.
+ */
+export async function stripeRequest<T = Record<string, unknown>>(
+  method: "GET" | "POST" | "DELETE",
+  path: string,
+  form?: URLSearchParams
+): Promise<T> {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Stripe is not configured (STRIPE_SECRET_KEY)");
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form ? form.toString() : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(`Stripe ${method} ${path} failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as T;
+}
+
+/**
+ * Create a subscription-mode Stripe Checkout Session. `metadata` is copied onto
+ * both the session and the subscription so webhooks can route either object.
+ * Returns the session id + hosted checkout URL, or null if Stripe isn't configured.
  */
 export async function createCheckoutSession(opts: {
   tenantId: string;
-  planId: string;
   priceId: string;
   customerEmail: string;
   successUrl: string;
   cancelUrl: string;
   stripeCustomerId?: string | null;
-}): Promise<string | null> {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) return null;
+  metadata: Record<string, string>;
+  /** Unix seconds; Stripe requires 30 min – 24 h from now. */
+  expiresAt?: number;
+}): Promise<{ id: string; url: string } | null> {
+  if (!isBillingConfigured()) return null;
 
   const form = new URLSearchParams();
   form.set("mode", "subscription");
@@ -84,19 +110,14 @@ export async function createCheckoutSession(opts: {
   form.set("client_reference_id", opts.tenantId);
   if (opts.stripeCustomerId) form.set("customer", opts.stripeCustomerId);
   else form.set("customer_email", opts.customerEmail);
-  form.set("metadata[tenantId]", opts.tenantId);
-  form.set("metadata[planId]", opts.planId);
-  form.set("subscription_data[metadata][tenantId]", opts.tenantId);
-  form.set("subscription_data[metadata][planId]", opts.planId);
-
-  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  });
-  if (!res.ok) {
-    throw new Error(`Stripe checkout failed: ${res.status} ${await res.text()}`);
+  if (opts.expiresAt) form.set("expires_at", String(opts.expiresAt));
+  const metadata = { tenantId: opts.tenantId, ...opts.metadata };
+  for (const [k, v] of Object.entries(metadata)) {
+    form.set(`metadata[${k}]`, v);
+    form.set(`subscription_data[metadata][${k}]`, v);
   }
-  const data = (await res.json()) as { url?: string };
-  return data.url ?? null;
+
+  const data = await stripeRequest<{ id: string; url?: string }>("POST", "checkout/sessions", form);
+  if (!data.url) throw new Error("Stripe checkout session has no URL");
+  return { id: data.id, url: data.url };
 }

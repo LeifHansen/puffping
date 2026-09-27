@@ -50,14 +50,14 @@ export async function POST(req: NextRequest) {
   }
 
   const tenant = await db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
-  const url = await createCheckoutSession({
+  const checkout = await createCheckoutSession({
     tenantId: session.tenantId,
-    planId: plan.id,
+    metadata: { planId: plan.id },
     priceId,
     customerEmail: session.email,
     stripeCustomerId: tenant.stripeCustomerId,
     successUrl: `${appBaseUrl()}/settings?billing=success`,
     cancelUrl: `${appBaseUrl()}/settings?billing=cancelled`,
   });
-  return NextResponse.json({ url });
+  return NextResponse.json({ url: checkout?.url ?? null });
 }

@@ -14,6 +14,7 @@ const PROTECTED_PAGES = [
   "/automations",
   "/audiences",
   "/settings",
+  "/admin",
 ];
 
 // Tenant-scoped API prefixes (401 when signed out). Auth + webhooks stay public.
@@ -24,6 +25,8 @@ const PROTECTED_API = [
   "/api/campaigns",
   "/api/inbox",
   "/api/numbers",
+  "/api/slots",
+  "/api/admin",
   "/api/registration",
   "/api/dashboard",
   "/api/ai",

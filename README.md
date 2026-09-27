@@ -18,8 +18,8 @@ The app is split into two Next.js route groups under `src/app`:
 - **Dynamic fields** — `{{first_name|there}}` with fallbacks plus any custom CSV column; live preview with SMS segment/encoding estimates.
 - **Templates** with an inline AI assistant (Claude) that writes/refines compliant marketing copy.
 - **MMS** — media on templates, campaigns, and inbox replies.
-- **Fully automated A2P 10DLC registration** — one minimal form drives the full Twilio pipeline (TrustHub customer profile → A2P trust product → brand → messaging service → campaign), idempotent and resumable.
-- **Toll-free verification** and **number shopping** (search + bulk purchase, auto-pooled).
+- **Number slot marketplace** — dedicated local numbers on PuffPing's carrier-approved A2P 10DLC campaigns (see below).
+- **Toll-free verification** for workspaces that own toll-free numbers. (A self-serve per-tenant 10DLC registration pipeline lives in `src/lib/tendlc.ts`, disabled.)
 - **Two-way inbox** with threaded conversations, unread tracking, MMS replies, and STOP/START opt-out compliance.
 - **Reporting dashboard** — delivery/reply/opt-out rates and a 30-day volume chart fed by Twilio status callbacks.
 
@@ -29,8 +29,18 @@ The schema and every query are already tenant-scoped so the jump to full multi-t
 
 - **Schema** — `Tenant`, `User`, and `Membership` models; every messaging-domain row carries a `tenantId`; uniqueness is per-tenant (`@@unique([tenantId, phone])`, `[tenantId, name]`, …). Each tenant can hold its own Twilio subaccount / messaging-service SID.
 - **One chokepoint** — `src/lib/tenant.ts` decides which tenant a request belongs to. Today `resolveTenant()` returns the default tenant (single-tenant mode). To go multi-tenant, change **only** that function (subdomain → `acme.puffping.io`, session, or JWT). Every route already calls `currentTenantId(req)` and scopes reads/writes accordingly.
-- **Sending** — `tenantMessagingServiceSid(tenant)` prefers the tenant's own messaging service and falls back to the global env var; the 10DLC pipeline writes the created messaging service back onto the tenant automatically.
-- **Inbound routing** — the inbound webhook maps the destination number to its owning tenant (falls back to default).
+- **Sending** — every message goes out from one of the workspace's own numbers (`src/lib/sender.ts`): `from` = the number, `messagingServiceSid` = that number's campaign. Selection is sticky per contact (the thread's number, else a stable hash).
+- **Inbound routing** — the inbound webhook maps the destination number to its owning tenant (falls back to default). A number belongs to exactly one workspace.
+
+## Number slots
+
+Numbers are sold as **slots** on PuffPing's approved A2P 10DLC campaigns (`src/lib/slots.ts`):
+
+- **Inventory** — each `MessagingCampaign` (a Twilio Messaging Service with a VERIFIED A2P campaign) provides 49 `NumberSlot`s. Platform admins (`PLATFORM_ADMIN_EMAILS`) add campaigns on `/admin`; the legacy `TWILIO_MESSAGING_SERVICE_SID` becomes "Campaign 1" on first boot, with existing numbers moved into free (comped) slots.
+- **Buying** — `POST /api/slots/purchase` atomically reserves a slot (never oversells) and opens a $25/mo Stripe Checkout (one subscription per slot). The Stripe webhook activates it; abandoned checkouts return the slot to inventory.
+- **Claiming** — `POST /api/slots/:id/claim` buys the chosen local number, attaches it to the slot's campaign, and records it `pending_registration`. Twilio Event Streams' number-registration events (`/api/webhooks/twilio/events`, connected from `/admin`) flip it to `active`, which is when it can send.
+- **Billing states** — `past_due` pauses sending from the number; cancelling keeps the slot until the paid period ends, then the number is released and the slot goes back on sale.
+- **Stripe webhook events** — enable `checkout.session.completed`, `checkout.session.expired`, and `customer.subscription.created|updated|deleted`.
 
 ## Getting started
 
@@ -47,7 +57,10 @@ npm run dev
 |---|---|
 | `DATABASE_URL` | `file:./dev.db` for dev; point at Postgres in production (change `provider` in `prisma/schema.prisma`) |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | Twilio API credentials |
-| `TWILIO_MESSAGING_SERVICE_SID` | Global fallback; per-tenant SIDs (set by the 10DLC flow) take precedence |
+| `TWILIO_MESSAGING_SERVICE_SID` | Legacy approved Messaging Service — seeds "Campaign 1" of slot inventory on first boot |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Billing (plans + number slots) |
+| `STRIPE_PRICE_NUMBER_SLOT` | Recurring $25/mo Stripe price for one number slot |
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails allowed to manage slot inventory at `/admin` |
 | `APP_BASE_URL` | Public URL of this app — Twilio webhooks must be reachable here |
 | `ANTHROPIC_API_KEY` | Enables the AI copy assistant |
 
