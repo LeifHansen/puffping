@@ -4,19 +4,24 @@ import { normalizePhone } from "@/lib/phone";
 import { refreshPendingTollFreeVerifications, refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { currentTenantId } from "@/lib/tenant";
+import { sendingNumberStatus } from "@/lib/send";
 
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
   // Show current status on the Compliance page instead of waiting for the
-  // scheduler's next poll (rows checked in the last minute are skipped).
+  // scheduler's next poll (rows checked in the last minute are skipped). Wait
+  // at most 2.5s — a slow Twilio finishes in the background for the next load.
   if (isTwilioConfigured()) {
-    await refreshPendingTollFreeVerifications({ tenantId, staleMs: 60_000, limit: 5 }).catch(() => {});
+    const refresh = refreshPendingTollFreeVerifications({ tenantId, staleMs: 60_000, limit: 5 }).catch(() => {});
+    await Promise.race([refresh, new Promise((resolve) => setTimeout(resolve, 2_500))]);
   }
   const verifications = await db.tollFreeVerification.findMany({
     where: { tenantId },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json({ verifications });
+  // Read after the refresh, so an approval found just now is reflected here too
+  // (GET /api/numbers, fetched in parallel by the page, may predate it).
+  return NextResponse.json({ verifications, sending: await sendingNumberStatus(tenantId) });
 }
 
 const REQUIRED = [

@@ -70,7 +70,9 @@ export default function CompliancePage() {
     ]);
     setVerifications(tfRes.verifications ?? []);
     setNumbers(numRes.numbers ?? []);
-    setSending(numRes.sending ?? null);
+    // The tollfree GET computes `sending` after refreshing verifications, so it
+    // reflects an approval that this very load discovered.
+    setSending(tfRes.sending ?? numRes.sending ?? null);
     setCampaign(statusRes.campaign ?? null);
   }, []);
 
@@ -187,6 +189,16 @@ export default function CompliancePage() {
             {sending.total === 0 ? (
               <>
                 No numbers yet — your workspace can&apos;t send until it has one. Buy one on the{" "}
+                <Link href="/numbers" className="underline hover:text-emerald-700">
+                  Numbers
+                </Link>{" "}
+                page.
+              </>
+            ) : sending.pooled === sending.total ? (
+              // Everything is pooled, so what's left is toll-free verification — on this page.
+              <>
+                Your toll-free number can&apos;t send until its carrier verification (below) is approved. To send
+                right away, buy a local number on the{" "}
                 <Link href="/numbers" className="underline hover:text-emerald-700">
                   Numbers
                 </Link>{" "}

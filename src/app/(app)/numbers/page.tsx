@@ -10,6 +10,7 @@ type OwnedNumber = {
   friendlyName: string | null;
   numberType: string;
   inMessagingService: boolean;
+  canSend: boolean;
 };
 type AvailableNumber = {
   phoneNumber: string;
@@ -222,11 +223,15 @@ export default function NumbersPage() {
             <Card key={n.id}>
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm">{n.phoneNumber}</span>
-                <Badge status={n.numberType === "tollfree" ? "scheduled" : "delivered"} />
+                <Badge status={n.canSend ? "ready" : n.inMessagingService ? "needs_verification" : "not_pooled"} />
               </div>
               <p className="mt-1 text-xs text-zinc-500">
                 {n.numberType === "tollfree" ? "Toll-free" : "Local 10DLC"} ·{" "}
-                {n.inMessagingService ? "in sending pool" : "not pooled yet — sync on the Compliance page"}
+                {n.canSend
+                  ? "sending from this number"
+                  : n.inMessagingService
+                    ? "can send once its verification is approved (Compliance page)"
+                    : "not in the sending pool yet — Sync numbers on the Compliance page"}
               </p>
             </Card>
           ))}

@@ -250,7 +250,7 @@ export default function NewCampaignPage() {
               className="max-w-xs disabled:cursor-not-allowed disabled:opacity-50"
             />
             {blocked ? (
-              <p className="mt-1 text-xs font-bold text-amber-300">Can&apos;t schedule yet. {blockedReason}</p>
+              <p className="mt-1 text-xs font-bold text-amber-300">Can&apos;t schedule yet — see the note at the top.</p>
             ) : (
               <p className="mt-1 text-xs text-zinc-500">
                 Leave empty to send now or save as a draft. The scheduler fires it automatically at the
@@ -276,7 +276,8 @@ export default function NewCampaignPage() {
           </div>
           {blocked && (
             <p className="text-xs text-zinc-500">
-              Save it as a draft now, then send it from Campaigns once this workspace has a number.
+              Save it as a draft now, then send it from Campaigns once{" "}
+              {sendingStatus?.total ? "one of your numbers can send" : "this workspace has a number"}.
             </p>
           )}
         </div>

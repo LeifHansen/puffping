@@ -32,6 +32,7 @@ const TOLLFREE_POLL_MS = 10 * 60_000;
 const g = globalThis as unknown as {
   __puffpingScheduler?: ReturnType<typeof setInterval>;
   __puffpingSchedulerRunning?: boolean;
+  __puffpingTollFreePolling?: boolean;
 };
 
 export function ensureScheduler() {
@@ -41,18 +42,29 @@ export function ensureScheduler() {
 }
 
 async function tick() {
+  pollTollFreeVerifications(); // own guard: slow Twilio calls must not hold up the tick
   if (g.__puffpingSchedulerRunning) return; // don't let ticks overlap
   g.__puffpingSchedulerRunning = true;
   try {
     await launchDueCampaigns();
     await processDueEnrollments();
     await resumePendingSends();
-    await refreshPendingTollFreeVerifications({ staleMs: TOLLFREE_POLL_MS, limit: 25 });
   } catch (err) {
     console.error("[puffping] scheduler tick failed:", err);
   } finally {
     g.__puffpingSchedulerRunning = false;
   }
+}
+
+/** Poll pending toll-free verifications in the background, one poll at a time. */
+function pollTollFreeVerifications() {
+  if (g.__puffpingTollFreePolling) return;
+  g.__puffpingTollFreePolling = true;
+  void refreshPendingTollFreeVerifications({ staleMs: TOLLFREE_POLL_MS, limit: 25 })
+    .catch((err) => console.error("[puffping] toll-free verification poll failed:", err))
+    .finally(() => {
+      g.__puffpingTollFreePolling = false;
+    });
 }
 
 /** Fire any scheduled campaign whose time has arrived. */

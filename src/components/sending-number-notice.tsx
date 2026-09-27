@@ -69,7 +69,12 @@ export function SendingNumberNotice({
       className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-800 bg-amber-900 p-4 shadow-[4px_4px_0_0_rgba(152,103,19,0.25)] ${className}`}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-extrabold text-amber-300">⚠ This workspace can&apos;t send messages yet</p>
+        <p className="text-sm font-extrabold text-zinc-100">
+          <span className="text-amber-300" aria-hidden>
+            ⚠
+          </span>{" "}
+          This workspace can&apos;t send messages yet
+        </p>
         <p className="mt-0.5 text-sm text-zinc-300">{status.reason}</p>
       </div>
       <Link

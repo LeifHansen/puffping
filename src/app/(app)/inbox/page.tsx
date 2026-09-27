@@ -110,6 +110,7 @@ export default function InboxPage() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
       <PageHeader title="Inbox" subtitle="Two-way conversations — replies land here in real time" />
+      <SendingNumberNotice status={sendingStatus} className="mb-4" />
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-3">
         <Card className="overflow-y-auto p-0">
           {conversations.length === 0 ? (
@@ -176,14 +177,19 @@ export default function InboxPage() {
                 ))}
                 <div ref={bottomRef} />
               </div>
-              <SendingNumberNotice status={sendingStatus} className="mb-3" />
               {error && <p className="mb-1 text-xs text-red-400">{error}</p>}
               <div className="flex gap-2 border-t border-zinc-800 pt-3">
                 <Input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && sendReply()}
-                  placeholder={blocked ? "Replies are off until this workspace has a number" : "Type a reply…"}
+                  placeholder={
+                    !blocked
+                      ? "Type a reply…"
+                      : sendingStatus?.total
+                        ? "Replies are off until one of your numbers can send"
+                        : "Replies are off until this workspace has a number"
+                  }
                   disabled={sending || blocked}
                   title={blockedReason}
                   className="disabled:cursor-not-allowed disabled:opacity-50"
