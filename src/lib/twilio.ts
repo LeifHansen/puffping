@@ -25,10 +25,6 @@ class TwilioNotConfiguredError extends Error {
   }
 }
 
-export function messagingServiceSid(): string | undefined {
-  return process.env.TWILIO_MESSAGING_SERVICE_SID || undefined;
-}
-
 export function appBaseUrl(): string {
   return (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 }

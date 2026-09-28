@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { isTwilioConfigured, twilio } from "@/lib/twilio";
 
 /**
- * Shop for available numbers. `type` = local | tollfree, optional `areaCode`
- * and `contains` (digit/letter pattern). Only SMS+MMS capable numbers.
+ * Shop for available local (10DLC) numbers to claim into a number slot.
+ * Optional `areaCode` and `contains` (digit/letter pattern). Only SMS+MMS
+ * capable numbers.
  */
 export async function GET(req: NextRequest) {
   if (!isTwilioConfigured()) {
     return NextResponse.json({ error: "Twilio is not configured" }, { status: 400 });
   }
   const { searchParams } = new URL(req.url);
-  const type = searchParams.get("type") === "tollfree" ? "tollfree" : "local";
   const areaCode = searchParams.get("areaCode")?.trim();
   const contains = searchParams.get("contains")?.trim();
 
@@ -30,15 +30,12 @@ export async function GET(req: NextRequest) {
     mmsEnabled: true,
     limit: 20,
   };
-  if (areaCode && type === "local") opts.areaCode = Number(areaCode);
+  if (areaCode) opts.areaCode = Number(areaCode);
   if (contains) opts.contains = contains;
 
   try {
     const client = twilio();
-    const available =
-      type === "tollfree"
-        ? await client.availablePhoneNumbers("US").tollFree.list(opts)
-        : await client.availablePhoneNumbers("US").local.list(opts);
+    const available = await client.availablePhoneNumbers("US").local.list(opts);
 
     return NextResponse.json({
       numbers: available.map((n) => ({

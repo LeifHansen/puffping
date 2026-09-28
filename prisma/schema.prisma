@@ -55,6 +55,7 @@ model Tenant {
   messages      Message[]
   conversations Conversation[]
   numbers       PhoneNumber[]
+  slots         NumberSlot[]
   tenDlc        TenDlcRegistration[]
   tollFree      TollFreeVerification[]
   media         MediaAsset[]
@@ -245,6 +246,7 @@ model Message {
   tenantId     String
   direction    String // outbound | inbound
   phone        String // counterparty E.164
+  fromNumber   String? // our sending number (outbound; E.164) — see src/lib/sender.ts
   body         String
   mediaUrls    String? // JSON array
   twilioSid    String?  @unique
@@ -276,6 +278,7 @@ model Conversation {
   id              String   @id @default(cuid())
   tenantId        String
   phone           String // counterparty E.164
+  fromNumber      String? // the workspace number this thread is on (replies go out from it)
   lastMessageAt   DateTime @default(now())
   lastMessageBody String   @default("")
   unreadCount     Int      @default(0)
@@ -412,11 +415,70 @@ model PhoneNumber {
   numberType   String // local | tollfree
   capabilities String? // JSON: { sms, mms, voice }
   inMessagingService Boolean @default(false)
+  // Carrier (A2P 10DLC) registration of this number on its slot's campaign:
+  // pending_registration | active | registration_failed. Only `active` numbers
+  // (on an `active` slot) can send. Existing rows default to active.
+  status            String  @default("active")
+  registrationError String?
   purchasedAt  DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  slot   NumberSlot?
 
   @@unique([tenantId, phoneNumber])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Number slots — platform-level inventory (NOT tenant-scoped)
+// ---------------------------------------------------------------------------
+//
+// An approved A2P 10DLC campaign (one Twilio Messaging Service with a VERIFIED
+// usAppToPerson campaign) provides `capacity` number slots (49 by default).
+// A workspace buys a slot ($25/mo, one Stripe subscription per slot), then
+// claims one number into it; the number is attached to that campaign's
+// Messaging Service and can send once carrier registration completes.
+// See src/lib/slots.ts.
+
+model MessagingCampaign {
+  id                  String   @id @default(cuid())
+  name                String
+  messagingServiceSid String   @unique
+  a2pCampaignSid      String? // usAppToPerson SID (QE…) verified when the campaign was added
+  capacity            Int      @default(49)
+  status              String   @default("active") // active | retired (retired: no new slots sold)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  slots NumberSlot[]
+}
+
+model NumberSlot {
+  id         String  @id @default(cuid())
+  campaignId String
+  tenantId   String?
+  // available | reserved (checkout open) | active (paid) | past_due (sending paused)
+  status        String    @default("available")
+  reservedUntil DateTime?
+
+  stripeCheckoutSessionId String?   @unique
+  stripeSubscriptionId    String?   @unique
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean   @default(false)
+  comped                  Boolean   @default(false) // no subscription (migrated / granted by the platform)
+
+  phoneNumberId String?   @unique
+  claimLockedAt DateTime? // short-lived lock while a number is being bought into this slot
+
+  purchasedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  campaign    MessagingCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  tenant      Tenant?           @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  phoneNumber PhoneNumber?      @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+
+  @@index([status, campaignId])
   @@index([tenantId])
 }
 

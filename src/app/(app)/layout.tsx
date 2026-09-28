@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/platform-admin";
 import { LogoutButton } from "@/components/logout-button";
 import {
   IconAutomations,
@@ -31,6 +32,9 @@ const NAV = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionUser();
   if (!session) redirect("/login");
+  const nav = isPlatformAdmin(session.email)
+    ? [...NAV, { href: "/admin", label: "Platform admin", Icon: IconSettings }]
+    : NAV;
 
   return (
     <div className="flex min-h-screen">
@@ -39,7 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/puff-ping-logo.png" alt="PuffPing" className="h-11 w-auto mix-blend-multiply" />
         </Link>
-        {NAV.map(({ href, label, Icon }) => (
+        {nav.map(({ href, label, Icon }) => (
           <Link
             key={href}
             href={href}

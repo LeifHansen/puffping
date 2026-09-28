@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { queueCampaign, sendDirectMessage } from "./send";
 import { renderTemplate } from "./render";
+import { sweepExpiredReservations } from "./slots";
 
 /**
  * Background scheduler (singleton per Node process).
@@ -9,6 +10,7 @@ import { renderTemplate } from "./render";
  *  1. Launches campaigns whose `scheduledAt` is due (status "scheduled").
  *  2. Advances automation drip enrollments whose `nextRunAt` is due, sending
  *     the current step and scheduling the next.
+ *  3. Settles number-slot reservations whose checkout window has passed.
  *
  * A reentrancy guard prevents overlapping ticks within a process; the singleton
  * interval prevents multiple schedulers per process. Cross-machine safety comes
@@ -36,6 +38,7 @@ async function tick() {
   try {
     await launchDueCampaigns();
     await processDueEnrollments();
+    await sweepExpiredReservations();
   } catch (err) {
     console.error("[puffping] scheduler tick failed:", err);
   } finally {

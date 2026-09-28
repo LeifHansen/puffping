@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "PuffPing — High-volume SMS & MMS marketing that stays compliant",
   description:
-    "Launch mass text campaigns to hundreds or 100,000+ contacts. Automated 10DLC & toll-free registration, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
+    "Launch mass text campaigns to hundreds or 100,000+ contacts. Dedicated numbers on carrier-approved 10DLC campaigns, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
 };
 
 const FEATURES = [
@@ -39,8 +39,8 @@ const FEATURES = [
   },
   {
     icon: "📞",
-    title: "Number shopping",
-    body: "Search and buy local or toll-free numbers — one or many at once. New numbers join your sending pool automatically.",
+    title: "Dedicated numbers",
+    body: "Pick your own local number for $25/mo per slot. It's registered on our carrier-approved 10DLC campaign for you, and only your workspace ever sends from it.",
   },
   {
     icon: "📊",
@@ -50,7 +50,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "1", title: "Get a number", body: "Buy local or toll-free numbers — they join our carrier-approved 10DLC sending pool instantly." },
+  { n: "1", title: "Get a number", body: "Buy a number slot and pick your local number — we register it on our carrier-approved 10DLC campaign." },
   { n: "2", title: "Import", body: "Upload your contacts. Numbers are cleaned and formatted; lists organize your audience." },
   { n: "3", title: "Compose", body: "Write with dynamic fields or let AI draft it. Preview segments and audience size live." },
   { n: "4", title: "Send & track", body: "Blast at scale and watch delivery, replies, and opt-outs roll in on the dashboard." },
@@ -147,14 +147,14 @@ export default function LandingPage() {
             </h2>
             <p className="mt-4 text-zinc-400">
               High-volume texting requires carrier registration — so we did it for you. Every workspace sends
-              through PuffPing&apos;s carrier-approved A2P 10DLC campaign from day one. Buy a number and it joins
-              the approved sending pool automatically; no forms, no waiting on carrier review.
+              through PuffPing&apos;s carrier-approved A2P 10DLC campaigns. Claim a number and we register it on an
+              approved campaign automatically — no brand forms, no campaign paperwork.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-zinc-300">
               {[
-                "Send under an approved 10DLC campaign from day one",
-                "Purchased numbers auto-join the sending pool",
-                "Toll-free verification for instant high throughput",
+                "Send under an approved 10DLC campaign — no registration forms",
+                "Your own dedicated number, registered with carriers for you",
+                "Replies and opt-outs always land in the right workspace",
                 "STOP / HELP auto-replies and opt-out enforcement built in",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2.5">
