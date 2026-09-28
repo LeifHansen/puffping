@@ -11,7 +11,7 @@ export const NO_SENDING_NUMBER = "NO_SENDING_NUMBER";
 
 /**
  * Whether this workspace can send, from GET /api/numbers. A workspace must own a
- * number that can send — there's no shared-pool fallback. `status` is null until
+ * registered number on a paid slot — there's no shared fallback. `status` is null until
  * the first load lands, or when the fetch fails: treat that as unknown and don't
  * block the UI (the API refuses sends without a number regardless). Re-checks on
  * window focus, so buying a number in another tab clears the block.
@@ -57,12 +57,9 @@ export function SendingNumberNotice({
   className?: string;
 }) {
   if (!status || status.canSend) return null;
-  // No numbers at all → buy one. Otherwise the fix (sync the pool, verify a
-  // toll-free number) lives on the Compliance page.
-  const cta =
-    status.total === 0
-      ? { href: "/numbers", label: "Buy a number" }
-      : { href: "/compliance", label: "Go to Compliance" };
+  // Every fix (buy a slot, claim a number, check registration or billing)
+  // lives on the Numbers page.
+  const cta = status.total === 0 ? "Buy a number slot" : "Go to Numbers";
   return (
     <div
       role="status"
@@ -78,10 +75,10 @@ export function SendingNumberNotice({
         <p className="mt-0.5 text-sm text-zinc-300">{status.reason}</p>
       </div>
       <Link
-        href={cta.href}
+        href="/numbers"
         className="retro-press inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white shadow-[3px_3px_0_0_var(--color-brand-ink)] hover:bg-emerald-500 active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
       >
-        {cta.label} →
+        {cta} →
       </Link>
     </div>
   );

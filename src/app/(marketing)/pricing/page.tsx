@@ -29,7 +29,7 @@ const PLANS = [
     tagline: "For teams scaling their texting program.",
     features: [
       "Up to 50,000 contacts",
-      "Number pool + toll-free option",
+      "Multiple dedicated numbers",
       "AI copywriter",
       "Scheduled campaigns",
       "Delivery & engagement reporting",
@@ -47,7 +47,7 @@ const PLANS = [
       "100,000+ contacts",
       "Multiple workspaces (multi-tenant)",
       "Dedicated number pools",
-      "Toll-free + 10DLC brands",
+      "Custom 10DLC campaigns",
       "SSO & role-based access",
       "White-glove onboarding",
     ],
@@ -111,8 +111,8 @@ export default function PricingPage() {
       </div>
 
       <p className="mx-auto mt-10 max-w-2xl text-center text-xs text-zinc-500">
-        All plans send under PuffPing&apos;s carrier-approved 10DLC campaign and include toll-free verification, opt-out
-        compliance, and the two-way inbox.
+        Numbers are $25/mo per slot on any plan and are registered on our approved 10DLC campaigns for you. All
+        plans include opt-out compliance and the two-way inbox.
         Multi-tenant workspaces are available on Scale.
       </p>
     </div>

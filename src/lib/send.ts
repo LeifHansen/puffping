@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { renderTemplate, segmentCount } from "./render";
-import { appBaseUrl, messagingServiceSid, twilio } from "./twilio";
+import { appBaseUrl, twilio } from "./twilio";
+import { NO_SENDER_ERROR, pickFrom, sendableNumbers, type Sender } from "./sender";
 import { buildLinkMap, rewriteLinks } from "./links";
 import { parseDefinition, segmentWhere } from "./segments";
 import { addSuppression } from "./suppression";
@@ -13,10 +14,10 @@ import { Prisma } from "@prisma/client";
  * rows in batches and returns immediately. A singleton background worker
  * drains the queue with bounded concurrency, retries Twilio 429s with
  * backoff, and survives restarts (instrumentation resumes any pending rows
- * on boot). Every send goes through PuffPing's approved Messaging Service,
- * pinned to one of the workspace's own pooled numbers (see pickSender). A
- * workspace with no sending number can't send at all (see requireSenders);
- * delivery outcomes arrive via the status webhook.
+ * on boot). Each message goes out from one of the workspace's own numbers
+ * (see src/lib/sender.ts) through that number's campaign Messaging Service. A
+ * workspace with no number that can send can't send at all (see
+ * requireSenders); delivery outcomes arrive via the status webhook.
  */
 
 const ENQUEUE_BATCH = 1000; // contacts fetched/rendered per DB round-trip
@@ -26,7 +27,7 @@ const MAX_ATTEMPTS = 3;
 // A `sending` row older than this with no Twilio SID belongs to a dead worker.
 // Well above the worst-case time to drain one claimed batch.
 const STALE_CLAIM_MS = 5 * 60_000;
-// Twilio: "Attempt to send to unsubscribed recipient" (STOP'd on the service).
+// Twilio: "Attempt to send to unsubscribed recipient" (the recipient texted STOP).
 const TWILIO_UNSUBSCRIBED = 21610;
 
 /**
@@ -42,7 +43,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
   // Callers (send route, scheduler) have already atomically claimed the
   // campaign into `sending`, so there's no status write here. Refuse before
   // queueing anything if the workspace has no number to send from.
-  await assertCanSend(campaign.tenantId);
+  const senders = await requireSenders(campaign.tenantId);
 
   const tenantId = campaign.tenantId;
   const listIds = campaign.lists.map((l) => l.listId);
@@ -74,6 +75,13 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
     if (!contacts.length) break;
     cursor = contacts[contacts.length - 1].id;
 
+    // Sticky sender: contacts with an existing thread keep its number.
+    const threads = await db.conversation.findMany({
+      where: { tenantId, phone: { in: contacts.map((c) => c.phone) }, fromNumber: { not: null } },
+      select: { phone: true, fromNumber: true },
+    });
+    const threadNumber = new Map(threads.map((t) => [t.phone, t.fromNumber]));
+
     const rows = contacts
       .map((contact) => {
         const rendered = renderTemplate(campaign.body, contact);
@@ -84,6 +92,7 @@ export async function queueCampaign(campaignId: string): Promise<{ queued: numbe
           tenantId,
           direction: "outbound",
           phone: contact.phone,
+          fromNumber: pickFrom(senders, contact.phone, threadNumber.get(contact.phone))?.phoneNumber ?? null,
           body,
           mediaUrls,
           status: "pending",
@@ -130,7 +139,6 @@ function ensureSendWorker() {
 
 async function workerLoop() {
   const client = twilio();
-  const serviceSid = messagingServiceSid();
   const statusCallback = `${appBaseUrl()}/api/webhooks/twilio/status`;
 
   for (;;) {
@@ -144,7 +152,7 @@ async function workerLoop() {
     // ATOMIC claim: only rows still `pending` flip to `sending`, and only the
     // rows we actually claimed get sent. Prevents double-texting when multiple
     // workers run (multi-machine deploy, boot resume racing an active worker).
-    // `updatedAt` stamps the claim so recoverStaleClaims can tell a dead
+    // `updatedAt` stamps the claim so resumePendingSends can tell a dead
     // worker's rows from ones a live machine is sending right now.
     const claimedRows = await db.$queryRaw<{ id: string }[]>`
       UPDATE "Message" SET status = 'sending', "updatedAt" = now()
@@ -154,20 +162,35 @@ async function workerLoop() {
     const claimedIds = new Set(claimedRows.map((r) => r.id));
     const queue = candidates.filter((m) => claimedIds.has(m.id));
     if (!queue.length) continue; // another worker claimed this batch
+
+    // Sendable numbers per tenant, loaded once per batch so a number that just
+    // went past due / finished registering is picked up on the next batch.
+    const sendersByTenant = new Map<string, Promise<Sender[]>>();
+    const sendersFor = (tenantId: string) => {
+      let p = sendersByTenant.get(tenantId);
+      if (!p) sendersByTenant.set(tenantId, (p = sendableNumbers(tenantId)));
+      return p;
+    };
+    // Why a tenant can't send (only computed for tenants that can't).
+    const reasonByTenant = new Map<string, Promise<string>>();
+    const reasonFor = (tenantId: string) => {
+      let p = reasonByTenant.get(tenantId);
+      if (!p) reasonByTenant.set(tenantId, (p = sendingNumberStatus(tenantId).then((s) => s.reason ?? NO_SENDER_ERROR)));
+      return p;
+    };
+
     async function sender() {
       for (;;) {
         const msg = queue.shift();
         if (!msg) return;
-        let from: string;
-        try {
-          from = pickSender(await requireSenders(msg.tenantId), msg.phone);
-        } catch (err) {
-          if (!(err instanceof NoSendingNumberError)) throw err;
-          // Rows queued before the workspace lost its numbers (or before this
-          // rule existed) fail instead of going out from the shared pool.
+        // The number chosen at enqueue time, unless it can no longer send.
+        const from = pickFrom(await sendersFor(msg.tenantId), msg.phone, msg.fromNumber);
+        if (!from) {
+          // Rows queued before the workspace lost its numbers (slot lapsed,
+          // number released) fail rather than wait forever.
           await db.message.update({
             where: { id: msg.id },
-            data: { status: "failed", errorCode: NO_SENDING_NUMBER, errorMessage: err.message },
+            data: { status: "failed", errorCode: NO_SENDING_NUMBER, errorMessage: await reasonFor(msg.tenantId) },
           });
           continue;
         }
@@ -177,15 +200,15 @@ async function workerLoop() {
           try {
             const res = await client.messages.create({
               to: msg.phone,
-              messagingServiceSid: serviceSid,
-              from,
+              from: from.phoneNumber,
+              messagingServiceSid: from.messagingServiceSid,
               body: msg.body,
               mediaUrl: msg.mediaUrls ? (JSON.parse(msg.mediaUrls) as string[]) : undefined,
               statusCallback,
             });
             await db.message.update({
               where: { id: msg.id },
-              data: { twilioSid: res.sid, status: res.status ?? "queued" },
+              data: { twilioSid: res.sid, status: res.status ?? "queued", fromNumber: from.phoneNumber },
             });
             break;
           } catch (err) {
@@ -232,9 +255,9 @@ async function finalizeCompletedCampaigns() {
 }
 
 /**
- * Twilio refuses sends to a number that texted STOP on the (shared) Messaging
- * Service. Mirror that into this workspace's suppression list so its audiences
- * and UI reflect the opt-out, even if the STOP went to another number.
+ * Twilio refuses sends to a number that texted STOP to our sender. Mirror that
+ * into this workspace's suppression list so its audiences and UI reflect the
+ * opt-out, even if the STOP reached Twilio but never our inbound webhook.
  */
 async function suppressIfUnsubscribed(err: unknown, tenantId: string, phone: string) {
   if ((err as { code?: number }).code !== TWILIO_UNSUBSCRIBED) return;
@@ -244,15 +267,13 @@ async function suppressIfUnsubscribed(err: unknown, tenantId: string, phone: str
 }
 
 // ---------------------------------------------------------------------------
-// Sender selection
+// No number, no sending
 // ---------------------------------------------------------------------------
 //
-// All workspaces share ONE Messaging Service. Left to itself, Twilio would pick
-// any number in that shared pool — including another workspace's — and the
-// recipient's reply (or STOP) would then route to that other workspace via the
-// inbound webhook. So each send is pinned to one of the sending workspace's own
-// pooled numbers, and a workspace with none can't send: it must buy a number
-// first. Nothing ever goes out from the shared pool.
+// Every message goes out from one of the sending workspace's own numbers — a
+// registered number on a paid slot (see sendableNumbers). A workspace without
+// one can't send: sending, scheduling and inbox replies are refused up front
+// (409 NO_SENDING_NUMBER) with a reason that says what to do about it.
 
 export const NO_SENDING_NUMBER = "NO_SENDING_NUMBER";
 
@@ -267,109 +288,55 @@ export class NoSendingNumberError extends Error {
 
 export type SendingNumberStatus = {
   total: number; // numbers the workspace owns
-  pooled: number; // ...that are in the Messaging Service sender pool
-  sendable: number; // ...that can send now (pooled local, or pooled + verified toll-free)
+  sendable: number; // ...that can send now (registered, on a paid slot)
   canSend: boolean;
   reason: string | null; // why not, phrased for the user; null when canSend
 };
 
-const SENDER_CACHE_TTL_MS = 60_000;
-// Caches the in-flight promise so the worker's concurrent senders share one query.
-const senderCache = new Map<string, { numbers: Promise<string[]>; expiresAt: number }>();
-
 /**
- * The workspace's numbers that can send right now: in the Messaging Service
- * pool, and — for toll-free — carrier-verified (local numbers are covered by
- * the approved 10DLC campaign). Cached briefly; this is on the worker hot path.
- */
-function tenantSenders(tenantId: string): Promise<string[]> {
-  const hit = senderCache.get(tenantId);
-  if (hit && hit.expiresAt > Date.now()) return hit.numbers;
-  const numbers = loadTenantSenders(tenantId);
-  senderCache.set(tenantId, { numbers, expiresAt: Date.now() + SENDER_CACHE_TTL_MS });
-  numbers.catch(() => senderCache.delete(tenantId)); // don't cache a failed lookup
-  return numbers;
-}
-
-async function loadTenantSenders(tenantId: string): Promise<string[]> {
-  const [pooled, verifiedTollFree] = await Promise.all([
-    db.phoneNumber.findMany({
-      where: { tenantId, inMessagingService: true },
-      select: { phoneNumber: true, numberType: true, twilioSid: true },
-      orderBy: { phoneNumber: "asc" },
-    }),
-    db.tollFreeVerification.findMany({
-      where: { tenantId, status: "approved" },
-      select: { phoneNumberSid: true },
-    }),
-  ]);
-  const verified = new Set(verifiedTollFree.map((v) => v.phoneNumberSid));
-  return pooled
-    .filter((n) => n.numberType !== "tollfree" || verified.has(n.twilioSid))
-    .map((n) => n.phoneNumber);
-}
-
-/**
- * Whether the workspace can send, and if not, what to do about it. Always reads
- * fresh (never the cache) so a number bought seconds ago — possibly via another
- * machine — counts, and refreshes the cache with what it read.
+ * Whether the workspace can send, and if not, the most useful thing to tell it
+ * — ordered so a workspace that's merely waiting (registration in progress)
+ * isn't told to buy something it already has.
  */
 export async function sendingNumberStatus(tenantId: string): Promise<SendingNumberStatus> {
-  const [total, pooled, senders] = await Promise.all([
+  const [total, senders, slots] = await Promise.all([
     db.phoneNumber.count({ where: { tenantId } }),
-    db.phoneNumber.count({ where: { tenantId, inMessagingService: true } }),
-    loadTenantSenders(tenantId),
+    sendableNumbers(tenantId),
+    db.numberSlot.findMany({
+      where: { tenantId, status: { in: ["active", "past_due"] } },
+      select: { status: true, phoneNumber: { select: { status: true } } },
+    }),
   ]);
-  senderCache.set(tenantId, { numbers: Promise.resolve(senders), expiresAt: Date.now() + SENDER_CACHE_TTL_MS });
-  // Most actionable fix first: an unpooled number only needs a pool sync, which
-  // may be all it takes even when a toll-free number is also awaiting review.
+  const has = (slotStatus: string, numberStatus: string | null) =>
+    slots.some((s) => s.status === slotStatus && (s.phoneNumber?.status ?? null) === numberStatus);
+
   const reason = senders.length
     ? null
-    : !total
-      ? "Buy a phone number on the Numbers page before sending — every message goes out from one of your own numbers."
-      : pooled < total
-        ? "Your numbers aren't all in the sending pool yet — use Sync numbers on the Compliance page, then try again."
-        : "Toll-free numbers can't send until their carrier verification is approved — submit or check it on the Compliance page, or buy a local number to send right away.";
-  return { total, pooled, sendable: senders.length, canSend: senders.length > 0, reason };
+    : has("active", "pending_registration")
+      ? "Your number is finishing carrier registration — you can send as soon as carriers approve it (check its status on the Numbers page)."
+      : has("active", null)
+        ? "Claim a number into your number slot on the Numbers page — you can send once its carrier registration completes."
+        : has("active", "registration_failed")
+          ? "Carrier registration failed for your number — see the Numbers page for details."
+          : slots.some((s) => s.status === "past_due")
+            ? "Your number slot's payment is past due, so sending is paused — update your billing to resume."
+            : total
+              ? "Only numbers in a paid number slot can send — buy a slot and claim a number on the Numbers page."
+              : "Buy a number slot and claim a number on the Numbers page before sending — every message goes out from one of your own numbers.";
+  return { total, sendable: senders.length, canSend: senders.length > 0, reason };
 }
 
 /** Throw NoSendingNumberError unless the workspace has a number that can send. */
 export async function assertCanSend(tenantId: string): Promise<void> {
-  const status = await sendingNumberStatus(tenantId);
-  if (!status.canSend) throw new NoSendingNumberError(status.reason!);
+  await requireSenders(tenantId);
 }
 
-/**
- * The workspace's sending numbers (cached), or NoSendingNumberError. An empty
- * cached list is re-checked fresh before refusing, so a stale cache can never
- * block a workspace that just bought a number.
- */
-async function requireSenders(tenantId: string): Promise<string[]> {
-  const cached = await tenantSenders(tenantId);
-  if (cached.length) return cached;
-  await assertCanSend(tenantId); // fresh read; re-primes the cache when it passes
-  return tenantSenders(tenantId);
-}
-
-/** Drop cached sender lists after numbers are bought or (re)pooled. */
-export function invalidateSenderCache(tenantId?: string) {
-  if (tenantId) senderCache.delete(tenantId);
-  else senderCache.clear();
-}
-
-/**
- * Deterministic per-recipient pick (FNV-1a over the phone), so a contact always
- * hears from the same number across campaigns, drips, and inbox replies.
- * `numbers` must be non-empty (see requireSenders).
- */
-export function pickSender(numbers: string[], to: string): string {
-  if (!numbers.length) throw new Error("pickSender needs at least one number");
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < to.length; i++) {
-    hash ^= to.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return numbers[(hash >>> 0) % numbers.length];
+/** The workspace's sendable numbers, or NoSendingNumberError saying why there are none. */
+async function requireSenders(tenantId: string): Promise<Sender[]> {
+  const senders = await sendableNumbers(tenantId);
+  if (senders.length) return senders;
+  const { reason } = await sendingNumberStatus(tenantId);
+  throw new NoSendingNumberError(reason ?? NO_SENDER_ERROR);
 }
 
 /**
@@ -408,13 +375,20 @@ export async function sendDirectMessage(opts: {
   conversationId?: string;
   contactId?: string;
 }): Promise<string> {
-  const from = pickSender(await requireSenders(opts.tenantId), opts.to);
+  // Reply on the thread's number when there is one (sticky per contact).
+  const thread = await db.conversation.findFirst({
+    where: opts.conversationId
+      ? { id: opts.conversationId, tenantId: opts.tenantId }
+      : { tenantId: opts.tenantId, phone: opts.to },
+    select: { fromNumber: true },
+  });
+  const from = pickFrom(await requireSenders(opts.tenantId), opts.to, thread?.fromNumber)!;
   const client = twilio();
   const msg = await client.messages
     .create({
       to: opts.to,
-      messagingServiceSid: messagingServiceSid(),
-      from,
+      from: from.phoneNumber,
+      messagingServiceSid: from.messagingServiceSid,
       body: opts.body,
       mediaUrl: opts.mediaUrls,
       statusCallback: `${appBaseUrl()}/api/webhooks/twilio/status`,
@@ -428,6 +402,7 @@ export async function sendDirectMessage(opts: {
       tenantId: opts.tenantId,
       direction: "outbound",
       phone: opts.to,
+      fromNumber: from.phoneNumber,
       body: opts.body,
       mediaUrls: opts.mediaUrls ? JSON.stringify(opts.mediaUrls) : null,
       twilioSid: msg.sid,
@@ -440,7 +415,7 @@ export async function sendDirectMessage(opts: {
   if (opts.conversationId) {
     await db.conversation.update({
       where: { id: opts.conversationId },
-      data: { lastMessageAt: new Date(), lastMessageBody: opts.body },
+      data: { lastMessageAt: new Date(), lastMessageBody: opts.body, fromNumber: from.phoneNumber },
     });
   }
   return record.id;

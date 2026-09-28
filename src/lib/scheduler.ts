@@ -1,18 +1,17 @@
 import { db } from "./db";
 import { NoSendingNumberError, queueCampaign, resumePendingSends, sendDirectMessage } from "./send";
 import { renderTemplate } from "./render";
-import { refreshPendingTollFreeVerifications } from "./tollfree";
+import { sweepExpiredReservations } from "./slots";
 
 /**
  * Background scheduler (singleton per Node process).
  *
- * Every tick it does two things:
+ * Every tick it:
  *  1. Launches campaigns whose `scheduledAt` is due (status "scheduled").
  *  2. Advances automation drip enrollments whose `nextRunAt` is due, sending
  *     the current step and scheduling the next.
- *
  *  3. Requeues send-queue rows orphaned by a dead worker (stale claims).
- *  4. Polls toll-free verifications under review (approval unblocks sending).
+ *  4. Settles number-slot reservations whose checkout window has passed.
  *
  * A reentrancy guard prevents overlapping ticks within a process; the singleton
  * interval prevents multiple schedulers per process. Cross-machine safety comes
@@ -26,13 +25,10 @@ const ENROLLMENT_BATCH = 200;
 const ENROLLMENT_LEASE_MS = 5 * 60_000;
 // A drip step whose workspace has no sending number waits this long, then retries.
 const NO_NUMBER_RETRY_MS = 60 * 60_000;
-// Each pending toll-free verification is re-checked with Twilio at most this often.
-const TOLLFREE_POLL_MS = 10 * 60_000;
 
 const g = globalThis as unknown as {
   __puffpingScheduler?: ReturnType<typeof setInterval>;
   __puffpingSchedulerRunning?: boolean;
-  __puffpingTollFreePolling?: boolean;
 };
 
 export function ensureScheduler() {
@@ -42,29 +38,18 @@ export function ensureScheduler() {
 }
 
 async function tick() {
-  pollTollFreeVerifications(); // own guard: slow Twilio calls must not hold up the tick
   if (g.__puffpingSchedulerRunning) return; // don't let ticks overlap
   g.__puffpingSchedulerRunning = true;
   try {
     await launchDueCampaigns();
     await processDueEnrollments();
     await resumePendingSends();
+    await sweepExpiredReservations();
   } catch (err) {
     console.error("[puffping] scheduler tick failed:", err);
   } finally {
     g.__puffpingSchedulerRunning = false;
   }
-}
-
-/** Poll pending toll-free verifications in the background, one poll at a time. */
-function pollTollFreeVerifications() {
-  if (g.__puffpingTollFreePolling) return;
-  g.__puffpingTollFreePolling = true;
-  void refreshPendingTollFreeVerifications({ staleMs: TOLLFREE_POLL_MS, limit: 25 })
-    .catch((err) => console.error("[puffping] toll-free verification poll failed:", err))
-    .finally(() => {
-      g.__puffpingTollFreePolling = false;
-    });
 }
 
 /** Fire any scheduled campaign whose time has arrived. */

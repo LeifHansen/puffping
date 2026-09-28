@@ -14,9 +14,8 @@ import { getSessionUser } from "./auth";
  * getDefaultTenantId() directly). Protected API routes are additionally gated
  * by middleware, so callers without a session cookie never reach a handler.
  *
- * Sending is platform-wide: every workspace sends through PuffPing's one
- * approved Messaging Service (see messagingServiceSid() in ./twilio), pinned to
- * the workspace's own pooled numbers (see ./send).
+ * Sending: each workspace sends only from its own numbers — numbers claimed
+ * into paid slots on PuffPing's approved campaigns (see ./slots, ./sender).
  */
 
 const DEFAULT_SLUG = "default";

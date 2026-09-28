@@ -1,6 +1,5 @@
 import type { TollFreeVerification } from "@prisma/client";
 import { db } from "./db";
-import { invalidateSenderCache } from "./send";
 import { twilio } from "./twilio";
 
 /**
@@ -60,7 +59,7 @@ export async function refreshTollFreeStatus(id: string): Promise<TollFreeVerific
     TWILIO_APPROVED: "approved",
     TWILIO_REJECTED: "rejected",
   };
-  const updated = await db.tollFreeVerification.update({
+  return db.tollFreeVerification.update({
     where: { id },
     data: {
       status: map[verification.status] ?? reg.status,
@@ -70,17 +69,13 @@ export async function refreshTollFreeStatus(id: string): Promise<TollFreeVerific
           : null,
     },
   });
-  // An approved toll-free number becomes a sender (see loadTenantSenders).
-  if (updated.status !== reg.status) invalidateSenderCache(reg.tenantId);
-  return updated;
 }
 
 /**
- * Pull Twilio's current status for verifications still under review. Approval
- * is what lets a toll-free number send, so it must reach the DB without anyone
- * clicking anything. Each refresh bumps updatedAt, so `staleMs` spaces out
- * re-checks of the same row. Run from the scheduler tick (all workspaces) and
- * when the Compliance page loads (one workspace).
+ * Pull Twilio's current status for verifications still under review, so the
+ * Compliance page shows it without anyone clicking anything. Each refresh bumps
+ * updatedAt, so `staleMs` spaces out re-checks of the same row. Run when the
+ * Compliance page loads (one workspace, time-boxed by the caller).
  */
 const REFRESH_CONCURRENCY = 5;
 // Per-row cap: a hung Twilio request (SDK default timeout 30s) must not stall the poll.
@@ -105,7 +100,7 @@ export async function refreshPendingTollFreeVerifications(opts: { tenantId?: str
       await withDeadline(refreshTollFreeStatus(rowId), REFRESH_DEADLINE_MS).catch(async (err) => {
         console.error(`[puffping] toll-free verification refresh failed (${rowId}):`, err);
         // Still space out the next attempt, or a row Twilio keeps erroring on
-        // (e.g. a deleted verification) would be re-fetched every tick.
+        // (e.g. a deleted verification) would be re-fetched on every page load.
         await db.tollFreeVerification.update({ where: { id: rowId }, data: { updatedAt: new Date() } }).catch(() => {});
       });
     }
