@@ -18,6 +18,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
         "Content-Type": asset.mimeType,
         "Content-Length": String(bytes.length),
         "Cache-Control": "public, max-age=31536000, immutable",
+        // Defense-in-depth: never execute anything served from here on the app
+        // origin, and never let the browser second-guess the content type.
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
       },
     });
   } catch {

@@ -13,11 +13,14 @@ export async function GET(req: NextRequest, { params }: Params) {
   });
   if (!conversation) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const messages = await db.message.findMany({
+  // Most-recent 500, returned oldest→newest (taking ascending would truncate
+  // the RECENT end of long threads).
+  const recent = await db.message.findMany({
     where: { tenantId, OR: [{ conversationId: id }, { phone: conversation.phone }] },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
     take: 500,
   });
+  const messages = recent.reverse();
 
   // Opening the thread marks it read
   if (conversation.unreadCount > 0) {

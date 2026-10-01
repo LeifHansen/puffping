@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
+import {
+  activateSlotFromCheckout,
+  releaseReservation,
+  syncSlotSubscription,
+  type StripeCheckoutSession,
+  type StripeSubscription,
+} from "@/lib/slots";
 
 /**
- * Stripe webhook: keeps each workspace's plan + subscription status in sync.
+ * Stripe webhook: keeps each workspace's plan + subscription status in sync,
+ * and drives number-slot purchases (metadata.kind === "number_slot": one
+ * subscription per slot — see src/lib/slots.ts).
  * Verifies the Stripe-Signature header against STRIPE_WEBHOOK_SECRET (manual
- * HMAC — no SDK dependency). No-op if the webhook secret isn't configured.
+ * HMAC — no SDK dependency). Fails closed (503) when the secret is missing so
+ * forged events can never change a workspace's plan.
  */
+const SIGNATURE_TOLERANCE_SECONDS = 300; // Stripe-recommended replay window
+
 function verifyStripeSignature(payload: string, header: string, secret: string): boolean {
   // Header: t=timestamp,v1=signature[,v1=...]
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=")));
-  const timestamp = parts["t"];
-  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+  const timestamp = Number(parts["t"]);
+  if (!Number.isFinite(timestamp)) return false;
+  if (Math.abs(Date.now() / 1000 - timestamp) > SIGNATURE_TOLERANCE_SECONDS) return false; // replay guard
+  const expected = createHmac("sha256", secret).update(`${parts["t"]}.${payload}`).digest("hex");
   const provided = parts["v1"] ?? "";
   const a = Buffer.from(expected);
   const b = Buffer.from(provided);
@@ -23,10 +37,11 @@ export async function POST(req: NextRequest) {
   const payload = await req.text();
   const sig = req.headers.get("stripe-signature") ?? "";
 
-  if (secret) {
-    if (!verifyStripeSignature(payload, sig, secret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
-    }
+  // Fail CLOSED: without the secret we cannot verify authenticity, and these
+  // events change billing state.
+  if (!secret) return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+  if (!verifyStripeSignature(payload, sig, secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   let event: { type: string; data: { object: Record<string, unknown> } };
@@ -39,11 +54,14 @@ export async function POST(req: NextRequest) {
   const obj = event.data?.object ?? {};
   const metadata = (obj.metadata as Record<string, string>) ?? {};
   const tenantId = metadata.tenantId || (obj.client_reference_id as string) || null;
+  const isSlot = metadata.kind === "number_slot";
 
   try {
     switch (event.type) {
       case "checkout.session.completed": {
-        if (tenantId) {
+        if (isSlot) {
+          await activateSlotFromCheckout(obj as unknown as StripeCheckoutSession);
+        } else if (tenantId) {
           await db.tenant.updateMany({
             where: { id: tenantId },
             data: {
@@ -56,13 +74,27 @@ export async function POST(req: NextRequest) {
         }
         break;
       }
+      case "checkout.session.expired": {
+        if (isSlot && metadata.slotId) {
+          await releaseReservation({ slotId: metadata.slotId, sessionId: obj.id as string });
+        }
+        break;
+      }
+      case "customer.subscription.created": {
+        await syncSlotSubscription(obj as unknown as StripeSubscription, false);
+        break;
+      }
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        const status = event.type.endsWith("deleted")
-          ? "canceled"
-          : (obj.status as string) === "past_due"
-            ? "past_due"
-            : "active";
+        const deleted = event.type.endsWith("deleted");
+        if ((await syncSlotSubscription(obj as unknown as StripeSubscription, deleted)) === "handled") break;
+        const stripeStatus = obj.status as string;
+        const status =
+          deleted || ["canceled", "incomplete_expired"].includes(stripeStatus)
+            ? "canceled"
+            : ["active", "trialing"].includes(stripeStatus)
+              ? "active"
+              : "past_due"; // past_due, unpaid, incomplete, paused
         const subId = obj.id as string;
         await db.tenant.updateMany({
           where: { stripeSubscriptionId: subId },
@@ -75,7 +107,11 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (err) {
-    console.error("[puffping] stripe webhook handling failed:", err);
+    // 500 → Stripe retries (all handlers are idempotent). Swallowing would
+    // silently lose a paid slot activation or a release, or leave a paying
+    // customer on the free plan.
+    console.error(`[puffping] stripe webhook ${event.type} handling failed:`, err);
+    return NextResponse.json({ error: "Webhook handling failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

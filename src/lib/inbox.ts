@@ -14,12 +14,23 @@ const OPT_IN_KEYWORDS = ["start", "unstop", "yes", "subscribe"];
 export async function recordInboundMessage(opts: {
   tenantId: string;
   from: string;
+  /** The workspace number that was texted (replies go out from it). */
+  toNumber?: string;
   body: string;
   twilioSid: string;
   mediaUrls: string[];
   numSegments: number;
 }) {
-  const { tenantId, from, body, twilioSid, mediaUrls, numSegments } = opts;
+  const { tenantId, from, toNumber, body, twilioSid, mediaUrls, numSegments } = opts;
+
+  // Idempotency: Twilio retries webhooks on any non-2xx. A duplicate delivery
+  // must be a clean no-op, not a unique-violation 500 (which triggers more retries).
+  if (twilioSid) {
+    const dupe = await db.message.findUnique({ where: { twilioSid }, select: { conversationId: true } });
+    if (dupe) {
+      return db.conversation.findUnique({ where: { id: dupe.conversationId ?? "" } });
+    }
+  }
 
   const contact = await db.contact.findUnique({
     where: { tenantId_phone: { tenantId, phone: from } },
@@ -31,7 +42,7 @@ export async function recordInboundMessage(opts: {
   if (OPT_OUT_KEYWORDS.includes(keyword)) {
     await addSuppression(tenantId, from, "opt_out");
   } else if (OPT_IN_KEYWORDS.includes(keyword)) {
-    await removeSuppression(tenantId, from);
+    await removeSuppression(tenantId, from, "opt_out");
   }
 
   const conversation = await db.conversation.upsert({
@@ -39,6 +50,7 @@ export async function recordInboundMessage(opts: {
     create: {
       tenantId,
       phone: from,
+      fromNumber: toNumber,
       contactId: contact?.id,
       lastMessageAt: new Date(),
       lastMessageBody: body,
@@ -48,6 +60,7 @@ export async function recordInboundMessage(opts: {
       lastMessageAt: new Date(),
       lastMessageBody: body,
       unreadCount: { increment: 1 },
+      ...(toNumber ? { fromNumber: toNumber } : {}),
       ...(contact ? { contactId: contact.id } : {}),
     },
   });

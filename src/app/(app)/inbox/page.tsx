@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, Input, PageHeader } from "@/components/ui";
+import { NO_SENDING_NUMBER, SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 type Conversation = {
   id: string;
@@ -20,13 +21,32 @@ type Message = {
   mediaUrls: string | null;
 };
 
+/** Safe parse — one malformed row must not crash the whole inbox. */
+function parseMediaUrls(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((u): u is string => typeof u === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { status: sendingStatus, reload: reloadSending } = useSendingStatus();
+  // No number to reply from. Unknown status (null) doesn't block — the API
+  // refuses sends without a number regardless.
+  const blocked = sendingStatus?.canSend === false;
+  const blockedReason = (blocked && sendingStatus?.reason) || undefined;
   const bottomRef = useRef<HTMLDivElement>(null);
+  // The thread currently on screen — responses for any other id are stale.
+  const activeIdRef = useRef<string | null>(null);
 
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/inbox").then((r) => r.json());
@@ -35,7 +55,7 @@ export default function InboxPage() {
 
   const loadThread = useCallback(async (id: string) => {
     const res = await fetch(`/api/inbox/${id}`).then((r) => r.json());
-    setMessages(res.messages ?? []);
+    if (activeIdRef.current === id) setMessages(res.messages ?? []);
   }, []);
 
   useEffect(() => {
@@ -45,6 +65,9 @@ export default function InboxPage() {
   }, [loadConversations]);
 
   useEffect(() => {
+    activeIdRef.current = activeId;
+    setMessages([]);
+    setError(null);
     if (!activeId) return;
     loadThread(activeId);
     const interval = setInterval(() => loadThread(activeId), 10000);
@@ -56,20 +79,30 @@ export default function InboxPage() {
   }, [messages.length]);
 
   async function sendReply() {
-    if (!activeId || !reply.trim()) return;
+    // Guard against double-sends (Enter + click, key repeat) — each is a real SMS.
+    if (!activeId || !reply.trim() || sending || blocked) return;
+    const id = activeId;
+    setSending(true);
     setError(null);
-    const res = await fetch(`/api/inbox/${activeId}/reply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: reply }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error);
-      return;
+    try {
+      const res = await fetch(`/api/inbox/${id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: reply }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? `Send failed (HTTP ${res.status})`);
+        if (data.code === NO_SENDING_NUMBER) reloadSending();
+        return;
+      }
+      setReply("");
+      loadThread(id);
+    } catch {
+      setError("Send failed — check your connection and try again.");
+    } finally {
+      setSending(false);
     }
-    setReply("");
-    loadThread(activeId);
   }
 
   const active = conversations.find((c) => c.id === activeId);
@@ -77,6 +110,7 @@ export default function InboxPage() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
       <PageHeader title="Inbox" subtitle="Two-way conversations — replies land here in real time" />
+      <SendingNumberNotice status={sendingStatus} className="mb-4" />
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-3">
         <Card className="overflow-y-auto p-0">
           {conversations.length === 0 ? (
@@ -130,11 +164,10 @@ export default function InboxPage() {
                         m.direction === "outbound" ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-100"
                       }`}
                     >
-                      {m.mediaUrls &&
-                        (JSON.parse(m.mediaUrls) as string[]).map((u) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img key={u} src={u} alt="MMS" className="mb-1 max-h-48 rounded-lg" />
-                        ))}
+                      {parseMediaUrls(m.mediaUrls).map((u) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={u} src={u} alt="MMS" className="mb-1 max-h-48 rounded-lg" />
+                      ))}
                       <p className="whitespace-pre-wrap">{m.body}</p>
                       <p className="mt-0.5 text-right text-[10px] opacity-60">
                         {new Date(m.createdAt).toLocaleTimeString()} · {m.status}
@@ -149,10 +182,21 @@ export default function InboxPage() {
                 <Input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendReply()}
-                  placeholder="Type a reply…"
+                  onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && sendReply()}
+                  placeholder={
+                    !blocked
+                      ? "Type a reply…"
+                      : sendingStatus?.total
+                        ? "Replies are off until one of your numbers can send"
+                        : "Replies are off until this workspace has a number"
+                  }
+                  disabled={sending || blocked}
+                  title={blockedReason}
+                  className="disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                <Button onClick={sendReply}>Send</Button>
+                <Button onClick={sendReply} disabled={sending || blocked || !reply.trim()} title={blockedReason}>
+                  {sending ? "Sending…" : "Send"}
+                </Button>
               </div>
             </>
           )}

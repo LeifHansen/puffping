@@ -9,9 +9,13 @@ import { getSessionUser } from "./auth";
  * Every query scopes by `tenantId`; this module decides *which* tenant a
  * request belongs to. It now resolves the tenant from the authenticated
  * session (see src/lib/auth.ts) — so each signed-in user only ever sees their
- * own workspace's data. Requests with no valid session fall back to the default
- * tenant (used by the seed + webhooks); protected API routes are additionally
- * gated by middleware, so unauthenticated callers never reach a handler.
+ * own workspace's data. Requests with no valid session are rejected; the
+ * default tenant is only for the seed + webhooks (which call
+ * getDefaultTenantId() directly). Protected API routes are additionally gated
+ * by middleware, so callers without a session cookie never reach a handler.
+ *
+ * Sending: each workspace sends only from its own numbers — numbers claimed
+ * into paid slots on PuffPing's approved campaigns (see ./slots, ./sender).
  */
 
 const DEFAULT_SLUG = "default";
@@ -35,26 +39,23 @@ export async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-/** Resolve the tenant for the current request from the auth session. */
+/**
+ * Resolve the tenant for the current request from the auth session.
+ * SECURITY: throws when there is no valid session — an invalid/expired cookie
+ * must never fall back to the default tenant's data. The default tenant is
+ * reserved for webhooks/seed paths, which call getDefaultTenantId() directly.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function resolveTenant(req?: NextRequest): Promise<Tenant> {
   const session = await getSessionUser();
-  if (session) return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
-  return getDefaultTenant();
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return db.tenant.findUniqueOrThrow({ where: { id: session.tenantId } });
 }
 
 /** Convenience: just the tenant id for the current request (from the session). */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function currentTenantId(req?: NextRequest): Promise<string> {
   const session = await getSessionUser();
-  if (session) return session.tenantId;
-  return getDefaultTenantId();
-}
-
-/**
- * The messaging service SID to send from for a tenant: prefer the tenant's own
- * (full multi-tenant), else fall back to the global env var (single-tenant).
- */
-export function tenantMessagingServiceSid(tenant: Pick<Tenant, "twilioMessagingServiceSid">): string | undefined {
-  return tenant.twilioMessagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID || undefined;
+  if (!session) throw new Error("Unauthorized: sign in required");
+  return session.tenantId;
 }

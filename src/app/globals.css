@@ -38,7 +38,7 @@
   --color-sky-300: #1b6ea6;
   --color-sky-800: #a9d3ec;
   --color-sky-900: #dcecf8;
-  --color-amber-300: #986713;
+  --color-amber-300: #8a5c10; /* ≥4.5:1 on amber-900 badges/notices and on cards (WCAG AA) */
   --color-amber-800: #e6c893;
   --color-amber-900: #f6ead0;
   --color-red-100: #7a1f1f;

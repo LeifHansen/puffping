@@ -7,10 +7,12 @@ import type { Contact } from "@prisma/client";
  */
 export function renderTemplate(body: string, contact: ContactLike): string {
   const fields = contactFields(contact);
-  return body.replace(/\{\{\s*([\w.]+)\s*(?:\|\s*([^}]*?)\s*)?\}\}/g, (_m, key: string, fallback?: string) => {
+  // Keep this pattern free of adjacent overlapping quantifiers: the previous
+  // `\s*([^}]*?)\s*` backtracked cubically, so a crafted body blocked the event loop.
+  return body.replace(/\{\{\s*([\w.]+)\s*(?:\|([^}]*))?\}\}/g, (_m, key: string, fallback?: string) => {
     const value = fields[key.toLowerCase()];
     if (value !== undefined && value !== null && String(value).trim() !== "") return String(value);
-    return fallback ?? "";
+    return fallback?.trim() ?? "";
   });
 }
 
@@ -65,7 +67,8 @@ export function segmentCount(body: string): { segments: number; encoding: "GSM-7
     const segments = len <= 160 ? 1 : Math.ceil(len / 153);
     return { segments, encoding: "GSM-7", chars: len };
   }
-  const chars = [...body].length;
+  // Carriers count UTF-16 code units (an emoji = 2), not code points.
+  const chars = body.length;
   const segments = chars <= 70 ? 1 : Math.ceil(chars / 67);
   return { segments, encoding: "UCS-2", chars };
 }

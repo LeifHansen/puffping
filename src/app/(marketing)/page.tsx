@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "PuffPing — High-volume SMS & MMS marketing that stays compliant",
   description:
-    "Launch mass text campaigns to hundreds or 100,000+ contacts. Automated 10DLC & toll-free registration, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
+    "Launch mass text campaigns to hundreds or 100,000+ contacts. Dedicated numbers on carrier-approved 10DLC campaigns, MMS, a two-way inbox, dynamic fields, AI copy, and reporting.",
 };
 
 const FEATURES = [
@@ -39,8 +39,8 @@ const FEATURES = [
   },
   {
     icon: "📞",
-    title: "Number shopping",
-    body: "Search and buy local or toll-free numbers — one or many at once. New numbers join your sending pool automatically.",
+    title: "Dedicated numbers",
+    body: "Pick your own local number for $25/mo per slot. It's registered on our carrier-approved 10DLC campaign for you, and only your workspace ever sends from it.",
   },
   {
     icon: "📊",
@@ -50,7 +50,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "1", title: "Register", body: "Complete automated 10DLC or toll-free verification with the minimum info carriers require." },
+  { n: "1", title: "Get a number", body: "Buy a number slot and pick your local number — we register it on our carrier-approved 10DLC campaign." },
   { n: "2", title: "Import", body: "Upload your contacts. Numbers are cleaned and formatted; lists organize your audience." },
   { n: "3", title: "Compose", body: "Write with dynamic fields or let AI draft it. Preview segments and audience size live." },
   { n: "4", title: "Send & track", body: "Blast at scale and watch delivery, replies, and opt-outs roll in on the dashboard." },
@@ -73,7 +73,7 @@ export default function LandingPage() {
           <img src="/puff-ping-logo.png" alt="PuffPing" className="mx-auto mb-8 h-24 w-auto md:h-28 mix-blend-multiply" />
           <span className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-800 bg-emerald-900 px-3 py-1 text-xs font-bold text-emerald-300">
             <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-brand-violet)]" />
-            Fully automated 10DLC &amp; toll-free registration
+            10DLC compliance included — send under our approved campaign
           </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
             Mass texting that actually
@@ -85,7 +85,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
-              href="/dashboard"
+              href="/signup"
               className="retro-press rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
             >
               Get started free
@@ -104,7 +104,7 @@ export default function LandingPage() {
             {[
               ["100k+", "contacts per blast"],
               ["2-way", "real-time inbox"],
-              ["10DLC", "auto-registered"],
+              ["10DLC", "carrier-approved"],
             ].map(([stat, label]) => (
               <div key={label} className="rounded-2xl border-2 border-[color:var(--color-zinc-700)] bg-zinc-900 px-4 py-5 retro-shadow">
                 <div className="text-2xl font-extrabold text-emerald-600 md:text-3xl">{stat}</div>
@@ -141,21 +141,21 @@ export default function LandingPage() {
       <section id="compliance" className="border-y border-zinc-800/70 bg-zinc-900/30">
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-20 md:grid-cols-2">
           <div>
-            <span className="text-sm font-semibold text-emerald-400">Compliance, automated</span>
+            <span className="text-sm font-semibold text-emerald-400">Compliance, included</span>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">
-              10DLC &amp; toll-free registration without the paperwork maze
+              10DLC compliance without the paperwork maze
             </h2>
             <p className="mt-4 text-zinc-400">
-              High-volume texting requires carrier registration. PuffPing asks for only the minimum info the
-              carriers require, then creates and submits everything for you — the customer profile, A2P brand,
-              campaign, and messaging service — and tracks approval end to end.
+              High-volume texting requires carrier registration — so we did it for you. Every workspace sends
+              through PuffPing&apos;s carrier-approved A2P 10DLC campaigns. Claim a number and we register it on an
+              approved campaign automatically — no brand forms, no campaign paperwork.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-zinc-300">
               {[
-                "One short form → full A2P 10DLC brand + campaign",
-                "Toll-free verification for instant high throughput",
+                "Send under an approved 10DLC campaign — no registration forms",
+                "Your own dedicated number, registered with carriers for you",
+                "Replies and opt-outs always land in the right workspace",
                 "STOP / HELP auto-replies and opt-out enforcement built in",
-                "Resumable pipeline — pick up right where carrier review left off",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-emerald-400">✓</span>
@@ -210,10 +210,10 @@ export default function LandingPage() {
             Spin up a workspace, import your list, and reach every customer in minutes.
           </p>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="retro-press mt-7 inline-block rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-[4px_4px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
           >
-            Open the app
+            Get started free
           </Link>
         </div>
       </section>

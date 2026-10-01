@@ -29,9 +29,38 @@ Living checklist for the current work stream. Update as phases land.
 
       **Still infra-gated (need user-provided config):**
       - **Stripe billing go-live** — set `STRIPE_SECRET_KEY`,
-        `STRIPE_WEBHOOK_SECRET`, and the plan price IDs (`STRIPE_PRICE_STARTER`,
-        `STRIPE_PRICE_GROWTH`). Until then the app stays on the free plan and
-        the upgrade button reports "billing not configured."
+        `STRIPE_WEBHOOK_SECRET`, the plan price IDs (`STRIPE_PRICE_STARTER`,
+        `STRIPE_PRICE_GROWTH`), and `STRIPE_PRICE_NUMBER_SLOT`. Until then the
+        app stays on the free plan and **no one can buy a number slot** — so no
+        new workspace can send (only numbers migrated into comped slots can).
+
+## Platform A2P 10DLC — LIVE (2026-09-26)
+
+- [x] Campaign `CM00d14a209e1c83c112c73c91d1e1eed5` on Messaging Service
+      `MG1dc1a3f40c323aabf6cf26770330a6da` approved; the service is built into
+      `src/lib/twilio.ts` and becomes "Campaign 1" of the number-slot inventory
+      on first boot. Each workspace sends only from its own numbers
+      (registered numbers on paid slots — see README "Number slots").
+- [x] **A workspace must have a number before it can send** (decided
+      2026-09-26): a registered number on a paid slot. Replies and STOPs can't
+      route to another workspace. Send, schedule, and inbox reply return 409
+      `NO_SENDING_NUMBER` with the specific reason (buy a slot, claim a number,
+      registration in progress/failed, slot past due); a scheduled campaign
+      that fires without a number fails with a `failureReason`; drip steps
+      retry hourly instead of being skipped; queued rows fail with `errorCode`
+      `NO_SENDING_NUMBER`. Drafts still work. `GET /api/numbers` reports
+      `sending` status.
+
+**Open product decisions** (not implemented — need an owner call):
+- Plan quotas (`messageQuota`) are displayed but not enforced. Sending now
+  needs a paid number slot, but a workspace on the free plan can still burn
+  Twilio spend and put its shared campaign at risk for every workspace on it.
+  Enforcing today would cap every workspace at the free tier (1,000/mo) until
+  Stripe is live.
+- Invites are accepted by matching email with no verification; needs email
+  delivery + token-based acceptance.
+- Pricing page ($29/$99) disagrees with `PLANS` in `src/lib/billing.ts`
+  ($49/$199); the Scale tier advertises SSO, which doesn't exist.
 
 ## Queued AFTER all four phases
 
@@ -56,7 +85,5 @@ Living checklist for the current work stream. Update as phases land.
       cream backdrop, soft bevels, tasteful pixel/retro accents used sparingly
       (not full GeoCities kitsch). Keep it legible and modern.
 
-      **Logo asset TODO:** the logo was shared as a chat image, which does not
-      land on disk. Drop the real file into `branding/` and copy the
-      web-served version to `public/brand/` (e.g. `public/brand/puffping-logo.png`
-      + an SVG mark) so the header/sidebar/favicon can reference it.
+      **Logo:** wired in as `public/puff-ping-logo.png`. An SVG mark in
+      `branding/` would still be nicer for crisp scaling.

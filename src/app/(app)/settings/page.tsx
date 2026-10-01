@@ -19,6 +19,12 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState("member");
   const [newWorkspace, setNewWorkspace] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgIsError, setMsgIsError] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const flash = (text: string | null, isError = false) => {
+    setMsg(text);
+    setMsgIsError(isError);
+  };
 
   // billing
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -56,9 +62,9 @@ export default function SettingsPage() {
       body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
     });
     const data = await res.json();
-    if (!res.ok) return setMsg(data.error);
+    if (!res.ok) return flash(data.error, true);
     setInviteEmail("");
-    setMsg(data.joined ? "Added to the workspace." : "Invitation created — they'll join when they sign up.");
+    flash(data.joined ? "Added to the workspace." : "Invitation created — they'll join when they sign up.");
     loadAll();
   }
 
@@ -81,31 +87,38 @@ export default function SettingsPage() {
     window.location.reload();
   }
   async function createWorkspace() {
-    if (!newWorkspace.trim()) return;
-    await fetch("/api/workspaces", {
+    if (!newWorkspace.trim() || creating) return; // a double-click must not create two
+    setCreating(true);
+    flash(null);
+    const res = await fetch("/api/workspaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newWorkspace.trim() }),
-    });
+    }).catch(() => null);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => ({}));
+      setCreating(false);
+      return flash(data?.error ?? "Couldn't create the workspace — try again.", true);
+    }
     window.location.reload();
   }
 
   async function upgrade(planId: string) {
-    setMsg(null);
+    flash(null);
     const res = await fetch("/api/billing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ planId }),
-    });
-    const data = await res.json();
-    if (!res.ok) return setMsg(data.error);
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    if (!res?.ok) return flash(data?.error ?? "Couldn't start checkout — try again.", true);
     if (data.url) window.location.href = data.url;
   }
 
   return (
     <div className="max-w-4xl">
       <PageHeader title="Settings" subtitle="Workspace, team, and billing" />
-      {msg && <p className="mb-4 text-sm text-emerald-300">{msg}</p>}
+      {msg && <p className={`mb-4 text-sm font-bold ${msgIsError ? "text-red-400" : "text-emerald-300"}`}>{msg}</p>}
 
       {/* Workspaces */}
       <Card className="mb-5">
@@ -133,7 +146,9 @@ export default function SettingsPage() {
             <Label>Create a new workspace</Label>
             <Input value={newWorkspace} onChange={(e) => setNewWorkspace(e.target.value)} placeholder="Acme Cannabis Co." />
           </div>
-          <Button onClick={createWorkspace}>Create</Button>
+          <Button onClick={createWorkspace} disabled={creating}>
+            {creating ? "Creating…" : "Create"}
+          </Button>
         </div>
       </Card>
 

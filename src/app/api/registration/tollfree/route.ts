@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
+import { refreshPendingTollFreeVerifications, refreshTollFreeStatus, submitTollFreeVerification } from "@/lib/tollfree";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { currentTenantId } from "@/lib/tenant";
 
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
+  // Pull Twilio's current status so the Compliance page is up to date (rows
+  // checked in the last minute are skipped). Wait at most 2.5s — a slow Twilio
+  // finishes in the background for the next load.
+  if (isTwilioConfigured()) {
+    const refresh = refreshPendingTollFreeVerifications({ tenantId, staleMs: 60_000, limit: 5 }).catch(() => {});
+    await Promise.race([refresh, new Promise((resolve) => setTimeout(resolve, 2_500))]);
+  }
   const verifications = await db.tollFreeVerification.findMany({
     where: { tenantId },
     orderBy: { createdAt: "desc" },
@@ -44,11 +51,18 @@ export async function POST(req: NextRequest) {
   const contactPhone = normalizePhone(body.contactPhone);
   if (!contactPhone) return NextResponse.json({ error: "Invalid contact phone" }, { status: 400 });
 
+  // All workspaces' numbers live on one Twilio account — never trust a
+  // client-supplied SID; it must be one of this workspace's toll-free numbers.
+  const owned = await db.phoneNumber.findFirst({
+    where: { tenantId, twilioSid: body.phoneNumberSid, numberType: "tollfree" },
+  });
+  if (!owned) return NextResponse.json({ error: "Select one of your toll-free numbers" }, { status: 400 });
+
   const verification = await db.tollFreeVerification.create({
     data: {
       tenantId,
-      phoneNumberSid: body.phoneNumberSid,
-      phoneNumber: body.phoneNumber,
+      phoneNumberSid: owned.twilioSid,
+      phoneNumber: owned.phoneNumber,
       businessName: body.businessName.trim(),
       businessWebsite: body.businessWebsite.trim(),
       addressStreet: body.addressStreet.trim(),

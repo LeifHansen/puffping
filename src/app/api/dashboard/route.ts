@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { subDays, startOfDay, format } from "date-fns";
 import { db } from "@/lib/db";
 import { currentTenantId } from "@/lib/tenant";
 
 const DELIVERED = ["delivered"];
 const FAILED = ["failed", "undelivered"];
 
+/** YYYY-MM-DD in UTC — must match the DB's date_trunc (timestamps are UTC). */
+function utcDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
-  const since = startOfDay(subDays(new Date(), 29));
+  // Start of the UTC day 29 days ago — same timezone the DB buckets in, so
+  // edge days can't be dropped or misattributed on a non-UTC server.
+  const since = new Date(new Date().setUTCHours(0, 0, 0, 0) - 29 * 86_400_000);
 
   // 30-day daily series computed in one grouped aggregate (not by fetching every
   // message and bucketing in JS — that would pull 100k+ rows at scale).
@@ -46,10 +52,10 @@ export async function GET(req: NextRequest) {
     if (FAILED.includes(g.status)) failedCount += g._count;
   }
 
-  // 30-day time series: seed every day at 0, then fill from the grouped query.
+  // 30-day time series: seed every UTC day at 0, then fill from the grouped query.
   const days: Record<string, { date: string; outbound: number; delivered: number; inbound: number }> = {};
   for (let i = 29; i >= 0; i--) {
-    const d = format(subDays(new Date(), i), "yyyy-MM-dd");
+    const d = utcDayKey(new Date(Date.now() - i * 86_400_000));
     days[d] = { date: d, outbound: 0, delivered: 0, inbound: 0 };
   }
   for (const r of seriesRows) {

@@ -42,19 +42,25 @@ export async function POST(req: NextRequest) {
   const passwordHash = await hashPassword(password);
 
   // Create the workspace, the user, and the owner membership together.
-  const user = await db.user.create({
-    data: {
-      email,
-      name,
-      passwordHash,
-      memberships: {
-        create: {
-          role: "owner",
-          tenant: { create: { slug, name: workspaceName } },
+  // (try/catch closes the check-then-create race on the unique email.)
+  let user;
+  try {
+    user = await db.user.create({
+      data: {
+        email,
+        name,
+        passwordHash,
+        memberships: {
+          create: {
+            role: "owner",
+            tenant: { create: { slug, name: workspaceName } },
+          },
         },
       },
-    },
-  });
+    });
+  } catch {
+    return NextResponse.json({ error: "An account with that email already exists" }, { status: 409 });
+  }
 
   // Join any workspaces this email was invited to.
   await acceptInvitationsForUser(user.id, email);

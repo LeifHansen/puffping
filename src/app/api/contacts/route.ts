@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") ?? "";
   const listId = searchParams.get("listId");
-  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const pageSize = Math.min(200, Number(searchParams.get("pageSize") ?? 50));
+  // Clamp: NaN would 500 in Prisma, and a negative `take` silently pages backwards.
+  const page = Math.max(1, Math.floor(Number(searchParams.get("page")) || 1));
+  const pageSize = Math.min(200, Math.max(1, Math.floor(Number(searchParams.get("pageSize")) || 50)));
 
   const where = {
     tenantId,
@@ -47,6 +48,15 @@ export async function POST(req: NextRequest) {
   if (!phone) {
     return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
   }
+
+  // A STOP'd/DNC phone must not come back sendable; a list must be the tenant's own.
+  const [suppressedHit, ownedList] = await Promise.all([
+    db.suppression.findUnique({ where: { tenantId_phone: { tenantId, phone } } }),
+    body.listId
+      ? db.contactList.findFirst({ where: { id: String(body.listId), tenantId }, select: { id: true } })
+      : Promise.resolve(null),
+  ]);
+
   try {
     const contact = await db.contact.create({
       data: {
@@ -56,7 +66,8 @@ export async function POST(req: NextRequest) {
         lastName: body.lastName || null,
         email: body.email || null,
         customFields: body.customFields ? JSON.stringify(body.customFields) : null,
-        ...(body.listId ? { memberships: { create: { listId: body.listId } } } : {}),
+        ...(suppressedHit ? { optedOut: true, optedOutAt: new Date() } : {}),
+        ...(ownedList ? { memberships: { create: { listId: ownedList.id } } } : {}),
       },
     });
     return NextResponse.json({ contact }, { status: 201 });

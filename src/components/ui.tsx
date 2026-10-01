@@ -30,6 +30,7 @@ export function Button({
   type = "button",
   variant = "primary",
   disabled,
+  title,
   className = "",
 }: {
   children: ReactNode;
@@ -37,6 +38,7 @@ export function Button({
   type?: "button" | "submit";
   variant?: "primary" | "secondary" | "danger" | "ghost";
   disabled?: boolean;
+  title?: string;
   className?: string;
 }) {
   // Chunky sticker buttons: 2px outline + hard offset shadow that presses down.
@@ -52,7 +54,13 @@ export function Button({
     ghost: "border-transparent hover:bg-zinc-800 text-zinc-300 shadow-none",
   }[variant];
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${styles} ${className}`}>
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`${base} ${styles} ${className}`}
+    >
       {children}
     </button>
   );
@@ -96,6 +104,18 @@ const BADGE_COLORS: Record<string, string> = {
   submitted: "bg-sky-900 text-sky-300 border-sky-800",
   in_review: "bg-amber-900 text-amber-300 border-amber-800",
   rejected: "bg-red-900 text-red-300 border-red-800",
+  subscribed: "bg-emerald-900 text-emerald-300 border-emerald-800",
+  opted_out: "bg-red-900 text-red-300 border-red-800",
+  optimized: "bg-emerald-900 text-emerald-300 border-emerald-800",
+  // Number slots
+  active: "bg-emerald-900 text-emerald-300 border-emerald-800",
+  reserved: "bg-sky-900 text-sky-300 border-sky-800",
+  unclaimed: "bg-sky-900 text-sky-300 border-sky-800",
+  registering: "bg-amber-900 text-amber-300 border-amber-800",
+  pending_registration: "bg-amber-900 text-amber-300 border-amber-800",
+  past_due: "bg-red-900 text-red-300 border-red-800",
+  registration_failed: "bg-red-900 text-red-300 border-red-800",
+  retired: "bg-zinc-800 text-zinc-400 border-zinc-700",
 };
 
 export function Badge({ status }: { status: string }) {

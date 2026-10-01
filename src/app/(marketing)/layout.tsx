@@ -18,7 +18,7 @@ function Header() {
             Sign in
           </Link>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="retro-press rounded-xl border-2 border-[color:var(--color-brand-ink)] bg-emerald-600 px-3.5 py-2 text-sm font-bold text-white shadow-[3px_3px_0_0_var(--color-brand-ink)] active:shadow-[1px_1px_0_0_var(--color-brand-ink)]"
           >
             Get started
@@ -41,7 +41,7 @@ function Footer() {
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm font-bold text-zinc-400">
           <Link href="/#features" className="hover:text-emerald-700">Features</Link>
           <Link href="/pricing" className="hover:text-emerald-700">Pricing</Link>
-          <Link href="/#compliance" className="hover:text-emerald-700">10DLC &amp; Toll-free</Link>
+          <Link href="/#compliance" className="hover:text-emerald-700">10DLC Compliance</Link>
           <Link href="/privacy" className="hover:text-emerald-700">Privacy</Link>
           <Link href="/terms" className="hover:text-emerald-700">Terms</Link>
           <Link href="/dashboard" className="hover:text-emerald-700">Open app</Link>

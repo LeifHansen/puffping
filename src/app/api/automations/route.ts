@@ -59,10 +59,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Keyword must be unique per tenant so inbound routing is unambiguous.
+  // Compare case-insensitively — inbound matching lowercases, so "JOIN" and
+  // "join" would otherwise both trigger.
   if (triggerType === "keyword") {
-    const clash = await db.automation.findFirst({
-      where: { tenantId, triggerType: "keyword", triggerKeyword: { equals: triggerKeyword } },
+    const keywordAutomations = await db.automation.findMany({
+      where: { tenantId, triggerType: "keyword", triggerKeyword: { not: null } },
+      select: { triggerKeyword: true },
     });
+    const clash = keywordAutomations.some(
+      (a) => (a.triggerKeyword ?? "").trim().toLowerCase() === triggerKeyword.toLowerCase()
+    );
     if (clash) {
       return NextResponse.json(
         { error: `Keyword "${triggerKeyword}" is already used by another automation` },

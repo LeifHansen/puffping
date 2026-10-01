@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
+import { SendingNumberNotice, useSendingStatus } from "@/components/sending-number-notice";
 
 // Categorical slots validated against the dark green-black surface:
 // CVD-safe adjacent order, all >= 3:1 contrast.
@@ -45,13 +46,19 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
 export default function DashboardPage() {
   const [data, setData] = useState<Dash | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { status: sendingStatus } = useSendingStatus();
 
   useEffect(() => {
     fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Dashboard failed to load (HTTP ${r.status})`);
+        setData(await r.json());
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Dashboard failed to load"));
   }, []);
 
+  if (error) return <p className="text-sm font-bold text-red-400">{error}</p>;
   if (!data) return <p className="text-sm text-zinc-500">Loading…</p>;
 
   const t = data.totals;
@@ -66,7 +73,8 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Last 30 days of sending, delivery, and engagement" />
+      <PageHeader title="Dashboard" subtitle="All-time sending, delivery, and engagement · chart shows the last 30 days" />
+      <SendingNumberNotice status={sendingStatus} className="mb-6" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {tiles.map((tile) => (

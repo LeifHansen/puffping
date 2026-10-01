@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentTenantId } from "@/lib/tenant";
+import { NO_SENDING_NUMBER, sendingNumberStatus } from "@/lib/send";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -74,12 +75,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
   }
 
+  // Writes are conditioned on the status still being editable: the scheduler
+  // may claim the campaign into `sending` between the read above and here, and
+  // flipping a sending campaign back to draft would let it be re-blasted.
+  const EDITABLE = { id, tenantId, status: { in: ["draft", "scheduled"] } };
+  const conflict = () =>
+    NextResponse.json({ error: "Campaign started sending — it can no longer be changed" }, { status: 409 });
+
   if (body.action === "cancel") {
-    const updated = await db.campaign.update({
-      where: { id },
+    const { count } = await db.campaign.updateMany({
+      where: EDITABLE,
       data: { status: "draft", scheduledAt: null },
     });
-    return NextResponse.json({ campaign: updated });
+    if (!count) return conflict();
+    return NextResponse.json({ campaign: await db.campaign.findUnique({ where: { id } }) });
   }
 
   if (body.scheduledAt) {
@@ -87,11 +96,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
       return NextResponse.json({ error: "scheduledAt must be a future time" }, { status: 400 });
     }
-    const updated = await db.campaign.update({
-      where: { id },
+    const sending = await sendingNumberStatus(tenantId);
+    if (!sending.canSend) {
+      return NextResponse.json({ error: sending.reason, code: NO_SENDING_NUMBER }, { status: 409 });
+    }
+    const { count } = await db.campaign.updateMany({
+      where: EDITABLE,
       data: { status: "scheduled", scheduledAt: when },
     });
-    return NextResponse.json({ campaign: updated });
+    if (!count) return conflict();
+    return NextResponse.json({ campaign: await db.campaign.findUnique({ where: { id } }) });
   }
 
   return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
@@ -100,6 +114,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const tenantId = await currentTenantId(req);
   const { id } = await params;
+  const owned = await db.campaign.findFirst({ where: { id, tenantId }, select: { id: true } });
+  if (!owned) return NextResponse.json({ ok: true });
+  // Cancel any not-yet-sent messages FIRST — deleting the campaign alone would
+  // orphan them (campaignId → null) while the worker keeps blasting them out.
+  const cancelled = await db.message.updateMany({
+    where: { campaignId: id, status: "pending" },
+    data: { status: "canceled", errorMessage: "Campaign deleted before send" },
+  });
   await db.campaign.deleteMany({ where: { id, tenantId } });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, cancelled: cancelled.count });
 }

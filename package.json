@@ -14,15 +14,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@prisma/client": "^6.19.3",
-    "date-fns": "^4.4.0",
     "libphonenumber-js": "^1.13.8",
-    "next": "15.5.20",
+    "next": "15.5.26",
     "openai": "^6.48.0",
     "papaparse": "^5.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "recharts": "^3.9.2",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "twilio": "^6.0.2"
   },
   "devDependencies": {
@@ -33,7 +32,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.20",
+    "eslint-config-next": "15.5.26",
     "playwright-core": "^1.61.1",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",

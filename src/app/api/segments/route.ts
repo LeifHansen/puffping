@@ -48,14 +48,21 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     def.listIds = owned.map((l) => l.id);
+    // Every list was foreign/deleted: an empty filter would match ALL contacts.
+    if (!def.listIds.length && !def.tags?.length && !def.engagement) {
+      return NextResponse.json({ error: "The selected lists no longer exist" }, { status: 400 });
+    }
   }
 
-  const existing = await db.segment.findFirst({ where: { tenantId, name } });
-  if (existing) return NextResponse.json({ error: "A segment with that name already exists" }, { status: 409 });
-
-  const segment = await db.segment.create({
-    data: { tenantId, name, definition: JSON.stringify(def) },
-  });
+  let segment;
+  try {
+    segment = await db.segment.create({
+      data: { tenantId, name, definition: JSON.stringify(def) },
+    });
+  } catch {
+    // Unique (tenantId, name) — race-safe duplicate handling
+    return NextResponse.json({ error: "A segment with that name already exists" }, { status: 409 });
+  }
   const count = await db.contact.count({ where: segmentWhere(tenantId, def) });
   return NextResponse.json({ segment: { ...segment, def, count } }, { status: 201 });
 }

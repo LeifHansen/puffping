@@ -16,7 +16,8 @@ export function newInviteToken(): string {
 /**
  * Accept any pending invitations addressed to this email: create a membership
  * per invited workspace (idempotent) and mark the invite accepted. Called on
- * signup and login so an invite works whether the user existed already or not.
+ * signup; inviting an email that already has an account joins them immediately
+ * in the team route instead.
  */
 export async function acceptInvitationsForUser(userId: string, email: string): Promise<number> {
   const pending = await db.invitation.findMany({

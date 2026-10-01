@@ -70,3 +70,48 @@ export async function refreshTollFreeStatus(id: string): Promise<TollFreeVerific
     },
   });
 }
+
+/**
+ * Pull Twilio's current status for verifications still under review, so the
+ * Compliance page shows it without anyone clicking anything. Each refresh bumps
+ * updatedAt, so `staleMs` spaces out re-checks of the same row. Run when the
+ * Compliance page loads (one workspace, time-boxed by the caller).
+ */
+const REFRESH_CONCURRENCY = 5;
+// Per-row cap: a hung Twilio request (SDK default timeout 30s) must not stall the poll.
+const REFRESH_DEADLINE_MS = 10_000;
+
+export async function refreshPendingTollFreeVerifications(opts: { tenantId?: string; staleMs: number; limit: number }) {
+  const due = await db.tollFreeVerification.findMany({
+    where: {
+      ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
+      status: { in: ["submitted", "in_review"] },
+      verificationSid: { not: null },
+      updatedAt: { lt: new Date(Date.now() - opts.staleMs) },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: opts.limit,
+    select: { id: true },
+  });
+  const queue = due.map((d) => d.id);
+  async function worker() {
+    for (let id = queue.shift(); id; id = queue.shift()) {
+      const rowId = id;
+      await withDeadline(refreshTollFreeStatus(rowId), REFRESH_DEADLINE_MS).catch(async (err) => {
+        console.error(`[puffping] toll-free verification refresh failed (${rowId}):`, err);
+        // Still space out the next attempt, or a row Twilio keeps erroring on
+        // (e.g. a deleted verification) would be re-fetched on every page load.
+        await db.tollFreeVerification.update({ where: { id: rowId }, data: { updatedAt: new Date() } }).catch(() => {});
+      });
+    }
+  }
+  await Promise.all(Array.from({ length: REFRESH_CONCURRENCY }, worker));
+}
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+}

@@ -26,7 +26,7 @@ export async function GET() {
       role: m.role,
       isYou: m.userId === session.userId,
     })),
-    invites: invites.map((i) => ({ id: i.id, email: i.email, role: i.role, token: i.token })),
+    invites: invites.map((i) => ({ id: i.id, email: i.email, role: i.role })),
     canManage: canManage(session.role),
   });
 }
@@ -92,6 +92,9 @@ export async function DELETE(req: NextRequest) {
     if (userId === session.userId) return NextResponse.json({ error: "You can't remove yourself" }, { status: 400 });
     // Never remove the last owner.
     const target = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: session.tenantId } } });
+    if (target?.role === "owner" && session.role !== "owner") {
+      return NextResponse.json({ error: "Only owners can remove an owner" }, { status: 403 });
+    }
     if (target?.role === "owner") {
       const owners = await db.membership.count({ where: { tenantId: session.tenantId, role: "owner" } });
       if (owners <= 1) return NextResponse.json({ error: "Can't remove the last owner" }, { status: 400 });

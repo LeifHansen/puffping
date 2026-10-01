@@ -32,6 +32,7 @@ export default function AudiencesPage() {
   // suppression add
   const [phones, setPhones] = useState("");
   const [suppMsg, setSuppMsg] = useState<string | null>(null);
+  const [suppMsgIsError, setSuppMsgIsError] = useState(false);
 
   async function loadSegments() {
     const [s, l] = await Promise.all([
@@ -92,6 +93,7 @@ export default function AudiencesPage() {
       body: JSON.stringify({ phones }),
     });
     const data = await res.json();
+    setSuppMsgIsError(!res.ok);
     if (!res.ok) {
       setSuppMsg(data.error);
       return;
@@ -216,7 +218,9 @@ export default function AudiencesPage() {
               every campaign and automation, and matching contacts are opted out.
             </p>
             <TextArea rows={3} value={phones} onChange={(e) => setPhones(e.target.value)} placeholder="+15551234567, +15557654321" />
-            {suppMsg && <p className="mt-2 text-sm text-emerald-300">{suppMsg}</p>}
+            {suppMsg && (
+              <p className={`mt-2 text-sm font-bold ${suppMsgIsError ? "text-red-400" : "text-emerald-300"}`}>{suppMsg}</p>
+            )}
             <Button className="mt-3" onClick={addSuppressions} disabled={!phones.trim()}>
               Add to DNC
             </Button>

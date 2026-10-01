@@ -15,53 +15,84 @@ type Contact = {
   tagLinks: { tag: string }[];
 };
 
+const PAGE_SIZE = 50;
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [page, setPage] = useState(1);
   const [listFilter, setListFilter] = useState("");
   const [importResult, setImportResult] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [newListName, setNewListName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const requestSeq = useRef(0);
 
-  const load = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
+  // Debounce search so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // A new search or list filter starts from the first page.
+  useEffect(() => setPage(1), [debouncedQ, listFilter]);
+
+  const loadContacts = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    if (debouncedQ) params.set("q", debouncedQ);
     if (listFilter) params.set("listId", listFilter);
-    const [cRes, lRes] = await Promise.all([
-      fetch(`/api/contacts?${params}`).then((r) => r.json()),
-      fetch("/api/lists").then((r) => r.json()),
-    ]);
-    setContacts(cRes.contacts ?? []);
-    setTotal(cRes.total ?? 0);
-    setLists(lRes.lists ?? []);
-  }, [q, listFilter]);
+    const res = await fetch(`/api/contacts?${params}`).then((r) => r.json());
+    if (seq !== requestSeq.current) return; // a newer request superseded this one
+    setContacts(res.contacts ?? []);
+    setTotal(res.total ?? 0);
+  }, [debouncedQ, listFilter, page]);
+
+  const loadLists = useCallback(async () => {
+    const res = await fetch("/api/lists").then((r) => r.json());
+    setLists(res.lists ?? []);
+  }, []);
+
+  const load = useCallback(() => Promise.all([loadContacts(), loadLists()]), [loadContacts, loadLists]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadContacts();
+  }, [loadContacts]);
+
+  useEffect(() => {
+    loadLists();
+  }, [loadLists]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function handleImport(file: File) {
     setImporting(true);
     setImportResult(null);
     const form = new FormData();
     form.append("file", file);
-    if (listFilter) form.append("listId", listFilter);
-    else if (newListName.trim()) form.append("listName", newListName.trim());
-    const res = await fetch("/api/contacts/import", { method: "POST", body: form });
-    const data = await res.json();
-    setImporting(false);
-    if (!res.ok) {
-      setImportResult(`Import failed: ${data.error}`);
-      return;
+    // A typed new-list name is the explicit choice; otherwise import into the filtered list.
+    if (newListName.trim()) form.append("listName", newListName.trim());
+    else if (listFilter) form.append("listId", listFilter);
+    try {
+      const res = await fetch("/api/contacts/import", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setImportResult(`Import failed: ${data.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setImportResult(
+        `Imported ${data.imported} new, updated ${data.updated}, skipped ${data.invalidCount} invalid phone numbers.`
+      );
+      setNewListName("");
+      load();
+    } catch {
+      setImportResult("Import failed — check your connection and try again.");
+    } finally {
+      setImporting(false);
     }
-    setImportResult(
-      `Imported ${data.imported} new, updated ${data.updated}, skipped ${data.invalidCount} invalid phone numbers.`
-    );
-    setNewListName("");
-    load();
   }
 
   async function createList() {
@@ -72,7 +103,7 @@ export default function ContactsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    load();
+    loadLists();
   }
 
   async function toggleOptOut(c: Contact) {
@@ -157,12 +188,16 @@ export default function ContactsPage() {
             />
           </div>
         </div>
-        {importResult && <p className="mt-3 text-sm text-emerald-300">{importResult}</p>}
+        {importResult && (
+          <p className={`mt-3 text-sm font-bold ${importResult.startsWith("Import failed") ? "text-red-400" : "text-emerald-300"}`}>
+            {importResult}
+          </p>
+        )}
       </Card>
 
       {contacts.length === 0 ? (
         <EmptyState
-          title="No contacts yet"
+          title={debouncedQ || listFilter ? "No matching contacts" : "No contacts yet"}
           hint="Import a CSV — the phone column is auto-detected and numbers are formatted automatically. Extra columns become dynamic fields."
         />
       ) : (
@@ -202,7 +237,7 @@ export default function ContactsPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <Badge status={c.optedOut ? "failed" : "delivered"} />
+                    <Badge status={c.optedOut ? "opted_out" : "subscribed"} />
                   </td>
                   <td className="px-4 py-2.5 text-right whitespace-nowrap">
                     <Button variant="ghost" onClick={() => editTags(c)}>
@@ -219,6 +254,21 @@ export default function ContactsPage() {
               ))}
             </tbody>
           </table>
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-2.5 text-xs text-zinc-500">
+              <span>
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+              </span>
+              <span className="flex gap-2">
+                <Button variant="ghost" onClick={() => setPage((p) => p - 1)} disabled={page <= 1}>
+                  ← Prev
+                </Button>
+                <Button variant="ghost" onClick={() => setPage((p) => p + 1)} disabled={page >= pageCount}>
+                  Next →
+                </Button>
+              </span>
+            </div>
+          )}
         </Card>
       )}
     </div>

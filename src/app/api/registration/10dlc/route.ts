@@ -8,6 +8,14 @@ import { currentTenantId } from "@/lib/tenant";
 
 export const maxDuration = 300;
 
+// Self-serve 10DLC registration is DISABLED: the platform sends through one
+// approved Messaging Service on the main Twilio account, and purchased numbers
+// join its pool automatically. Flip this to false to re-enable the wizard
+// (e.g. when moving to per-tenant ISV subaccounts).
+const REGISTRATION_DISABLED = true;
+const DISABLED_MESSAGE =
+  "10DLC registration is managed by PuffPing — your workspace already sends through our approved campaign. Purchased numbers join the sending pool automatically.";
+
 export async function GET(req: NextRequest) {
   const tenantId = await currentTenantId(req);
   const registration = await db.tenDlcRegistration.findFirst({
@@ -35,6 +43,9 @@ const REQUIRED = [
 ] as const;
 
 export async function POST(req: NextRequest) {
+  if (REGISTRATION_DISABLED) {
+    return NextResponse.json({ error: DISABLED_MESSAGE, disabled: true }, { status: 503 });
+  }
   const tenantId = await currentTenantId(req);
   if (!isTwilioConfigured()) {
     return NextResponse.json({ error: "Twilio is not configured" }, { status: 400 });
@@ -106,6 +117,9 @@ export async function POST(req: NextRequest) {
 
 /** Re-poll / advance the pipeline (background auto-advance from the UI poll). */
 export async function PATCH(req: NextRequest) {
+  if (REGISTRATION_DISABLED) {
+    return NextResponse.json({ error: DISABLED_MESSAGE, disabled: true }, { status: 503 });
+  }
   const tenantId = await currentTenantId(req);
   const existing = await db.tenDlcRegistration.findFirst({
     where: { tenantId },

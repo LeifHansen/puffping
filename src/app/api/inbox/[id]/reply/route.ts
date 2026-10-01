@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sendDirectMessage } from "@/lib/send";
+import { NO_SENDING_NUMBER, NoSendingNumberError, sendDirectMessage } from "@/lib/send";
 import { currentTenantId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
@@ -26,6 +26,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof NoSendingNumberError) {
+      return NextResponse.json({ error: err.message, code: NO_SENDING_NUMBER }, { status: 409 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Send failed" },
       { status: 500 }
